@@ -339,12 +339,13 @@ export const TESTNET_PROFILE: DubzMainnetProfile = {
 
   notes: [
     "PHASE 10.1 FROZEN TESTNET CONSTANTS.",
-    "Testnet monetary identity is 33,000,000 max supply with 3 DUBZ initial reward.",
-    "Testnet target block time is 21 seconds.",
-    "Testnet coinbase maturity is 33 blocks.",
-    "Testnet genesis hash remains null until Phase 10.2 final genesis generation.",
-    "Testnet public seed URLs remain empty until Phase 10.6 seed node guide/deployment.",
-    "Testnet checkpoint public key remains null until checkpoint key generation.",
+  "Testnet monetary identity is 33,000,000 max supply with 33 DUBZ initial reward.",
+  "Testnet target block time is 190 seconds.",
+  "Testnet coinbase maturity is 33 blocks.",
+  "Testnet genesis hash and state root are finalized for v0.1.0-testnet.",
+  "Testnet public seed URLs remain empty until public VPS deployment.",
+  "Testnet checkpoint public key remains null until real checkpoint key generation.",
+  "This profile is for public testnet only. Mainnet is not live.",
   ],
 };
 
