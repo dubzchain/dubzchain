@@ -19,9 +19,9 @@ This release includes the core blockchain engine, peer-to-peer networking, RPC/e
 - rewardNow: 33
 
 ## Mining / Difficulty Profile
-- genesisDifficulty: 6
-- minDifficulty: 6
-- maxDifficulty: 9
+- genesisDifficulty: 3
+- minDifficulty: 3
+- maxDifficulty: 6
 - targetBlockMs: 190,000
 - diffWindow: 120
 
