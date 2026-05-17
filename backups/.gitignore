@@ -1,0 +1,37 @@
+# Dependencies / build
+node_modules/
+dist/
+
+# Environment secrets
+.env
+.env.*
+!.env.example
+
+# Local chain runtime files
+dubzchain.*.json
+dubzchain.*.json.bak
+dubzchain.*.peers.json
+dubzchain.*.snapshot.json
+dubzchain.*.snapshot.json.bak
+dubzchain.*.chainstate.json
+dubzchain.*.chainstate.json.bak
+dubzchain.*.crash-journal.json
+dubzchain.*.crash-journal.json.bak
+.dubzchain.*
+
+# Wallets / private local identities
+wallet.miner.*.json
+wallet.*.json
+
+# RPC local history
+rpc.send-history.*.json
+
+# Logs / OS files
+*.log
+.DS_Store
+
+# Test attack scripts
+attack-*.js
+
+# Local ZIP packages
+*.zip

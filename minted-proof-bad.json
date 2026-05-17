@@ -1,0 +1,32 @@
+{
+    "proof": {
+      "root": "4c1f02c113fa923df15031abe30370880bcb952f698289a7d2ea26d5ef3eddce",
+      "leafHash": "e22ce354bc69f78cbe8541482117d8acfe32551a76a768265796f92bb0e6af60",
+      "claim": {
+        "kind": "minted",
+        "minted": 7129
+      },
+      "proof": [
+        {
+          "position": "right",
+          "hash": "9dc44d83cefccc35cd0166d217dce0b8d0a894bb0434b249e92c2c7dbda5357b"
+        },
+        {
+          "position": "left",
+          "hash": "4fc02c320bf3e134606e19366c6559ffdb144534bf9540e4700dc086fee0eceb"
+        },
+        {
+          "position": "right",
+          "hash": "ef9eaa32ad61ade44ebe58cc36338a99aeaeb386223c35ed17068994964f0f2c"
+        },
+        {
+          "position": "right",
+          "hash": "803026bd1d33a2fbda855ff9c42cd0f5051e8003bd5095215f75f24060df59da"
+        },
+        {
+          "position": "right",
+          "hash": "aaf810d50af5d7f4fa4fb59bd0d3a1edc06bf6eaa6f2c53596e797736f226b1c"
+        }
+      ]
+    }
+  }

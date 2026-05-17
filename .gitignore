@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment / secrets
+.env
+.env.*
+*.pem
+*.key
+*.crt
+*.cert
+*private*
+*secret*
+
+# Wallets / keys
+wallet*.json
+*.wallet.json
+
+# Runtime blockchain data
+dubzchain.*.json
+chainstate/
+*.chainstate.json
+rpc.send-history.*.json
+
+# Logs / temp files
+*.log
+.DS_Store
+tmp/
+temp/
+
+# Local release artifacts
+*.zip
+
+# TypeScript generated output in project root
+*.js
+*.js.map
+*.d.ts
+*.d.ts.map
+
+# Local proof/runtime output
+proof.json

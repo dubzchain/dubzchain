@@ -1,0 +1,38 @@
+{
+  "ok": true,
+  "kind": "minted",
+  "address": null,
+  "pendingIndex": null,
+  "source": "chain-state",
+  "verified": true,
+  "proof": {
+    "root": "8b03b36f73f8b2d9f21d5a9dfaad56985b44f68a85537fc46901aa93d86dcbc7",
+    "leafHash": "ae90670036fadff7371dfc888d74a91cf9027af05c728e52a007403ceb516371",
+    "claim": {
+      "kind": "minted",
+      "minted": 45804
+    },
+    "proof": [
+      {
+        "position": "right",
+        "hash": "9dc44d83cefccc35cd0166d217dce0b8d0a894bb0434b249e92c2c7dbda5357b"
+      },
+      {
+        "position": "left",
+        "hash": "b3e448ac995c68e1c433aeae5a5e0632318d528946ef4041418796bf82c4b2e7"
+      },
+      {
+        "position": "right",
+        "hash": "2acc028168dd648110976fcca90cfcb95a1f530b850ce445350710d303663c34"
+      },
+      {
+        "position": "right",
+        "hash": "3b929e884a7ced371f5a9f0b13f7d956c43618ee1167776282b4eb85eb383c86"
+      },
+      {
+        "position": "right",
+        "hash": "6745f2e85a2ab88d21e2722676b10f1263180c214ea041f5ffc5b1684e43b304"
+      }
+    ]
+  }
+}

@@ -1,0 +1,24 @@
+{
+    "profile": "mainnet",
+    "chainId": "dubzchain-mainnet",
+    "networkMagic": "0xd00b2c03",
+    "protocolVersion": 1,
+    "ports": {
+      "p2p": 3333,
+      "rpc": 4333
+    },
+    "security": {
+      "rpcAuthRequired": true,
+      "tlsRequired": true,
+      "publicSeedsRequired": true,
+      "checkpointSigningRequired": true
+    },
+    "storage": {
+      "mode": "pruned",
+      "retentionWindow": 10080
+    },
+    "launchGate": {
+      "requiresPhase920ReleaseCandidateValidation": true
+    }
+  }
+  
