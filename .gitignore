@@ -41,3 +41,9 @@ temp/
 
 # Local proof/runtime output
 proof.json
+
+# DubzChain runtime data
+*.bak
+*.snapshot.json
+*.chainstate.json
+*.crash-journal.json
