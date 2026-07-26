@@ -829,11 +829,7 @@ function validateWalletSendInputs(deps: RpcServerDeps, parsed: any): WalletSendV
     };
   }
 
-  const toInput =
-  typeof toInputRaw === "string" &&
-  toInputRaw.includes("BEGIN RSA PUBLIC KEY")
-    ? toInputRaw
-    : String(toInputRaw).trim();
+  const toInput = String(toInputRaw).trim();
 
   if (amount === null || amount <= 0) {
     return {

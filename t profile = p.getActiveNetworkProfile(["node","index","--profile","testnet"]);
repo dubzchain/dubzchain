@@ -1,0 +1,17 @@
+[0;1;34m# ]8;;file://ubuntu-s-1vcpu-1gb-nyc1/etc/systemd/system/dubzchain.service/etc/systemd/system/dubzchain.service]8;;[0m
+[0;1;36m[Unit][0m
+Description=DubzChain Testnet Node
+After=network-online.target
+Wants=network-online.target
+[0;1;38;5;245m[0m
+[0;1;36m[Service][0m
+Type=simple
+WorkingDirectory=/opt/dubzchain
+ExecStart=/usr/bin/node /opt/dubzchain/dist/index.js 3101 --profile testnet --host 0.0.0.0 --rpc-host 127.0.0.1 --advertise ws://159.223.152.78:3101 --peer ws://157.230.50.214:3101 --automine --mine-empty --mine-interval 15000
+Restart=always
+RestartSec=5
+User=root
+Environment=NODE_ENV=production
+[0;1;38;5;245m[0m
+[0;1;36m[Install][0m
+WantedBy=multi-user.target
