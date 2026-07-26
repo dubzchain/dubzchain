@@ -1266,7 +1266,7 @@ function renderExplorerHtml(deps: RpcServerDeps, rpcPort: number, startedAtMs: n
             const j = t.toJSON();
             return `
         <tr>
-          <td>${htmlEscape(shortHash(j.id, 18))}</td>
+          <td><a href="/tx/${encodeURIComponent(j.id)}">${htmlEscape(shortHash(j.id, 18))}</a></td>
           <td>${htmlEscape(j.from ? shortKey(deps.shortAddress, j.from) : "null")}</td>
           <td>${htmlEscape(shortKey(deps.shortAddress, j.to))}</td>
           <td>${j.amount}</td>
@@ -1318,7 +1318,7 @@ function renderExplorerHtml(deps: RpcServerDeps, rpcPort: number, startedAtMs: n
           <td>${htmlEscape(item.toAddress ?? item.toInput ?? "-")}</td>
           <td>${item.amount ?? "-"}</td>
           <td>${item.fee ?? "-"}</td>
-          <td>${item.txId ? htmlEscape(shortHash(item.txId, 18)) : "-"}</td>
+          <td>${item.txId ? `<a href="/tx/${encodeURIComponent(item.txId)}">${htmlEscape(shortHash(item.txId, 18))}</a>` : "-"}</td>
           <td>${item.error ? htmlEscape(item.error) : "-"}</td>
         </tr>
       `;
@@ -2482,7 +2482,7 @@ function renderBlockExplorerHtml(
             (t, idx) => `
       <tr>
         <td>${idx}</td>
-        <td>${htmlEscape(shortHash(t.id, 18))}</td>
+        <td><a href="/tx/${encodeURIComponent(t.id)}">${htmlEscape(shortHash(t.id, 18))}</a></td>
         <td>${htmlEscape(t.type)}</td>
         <td>${htmlEscape(t.from ? shortKey(deps.shortAddress, t.from) : "null")}</td>
         <td>${htmlEscape(shortKey(deps.shortAddress, t.to))}</td>
@@ -2593,6 +2593,394 @@ function renderBlockExplorerHtml(
     <h2>Raw JSON</h2>
     <pre>${htmlEscape(JSON.stringify(block, null, 2))}</pre>
   </div>
+</div>
+</body>
+</html>`;
+}
+
+function renderTransactionExplorerHtml(
+  deps: RpcServerDeps,
+  rpcPort: number,
+  details: {
+    tx: RpcTxJson;
+    status: "confirmed" | "pending";
+    blockHeight: number | null;
+    blockHash: string | null;
+    txIndex: number | null;
+    chainHeight: number;
+  }
+) {
+  const tx = details.tx;
+  const confirmed = details.status === "confirmed";
+  const confirmations =
+    confirmed && details.blockHeight !== null
+      ? Math.max(0, details.chainHeight - details.blockHeight + 1)
+      : 0;
+
+  const statusLabel = confirmed ? "Confirmed" : "Pending";
+  const statusClass = confirmed ? "confirmed" : "pending";
+
+  const blockValue =
+    details.blockHeight === null
+      ? `<span class="muted">Not mined yet</span>`
+      : `<a href="/index?height=${details.blockHeight}">Block #${details.blockHeight}</a>`;
+
+  const blockHashValue =
+    details.blockHash === null
+      ? `<span class="muted">Not available</span>`
+      : htmlEscape(details.blockHash);
+
+  const fromDisplay = tx.from
+    ? htmlEscape(shortKey(deps.shortAddress, tx.from))
+    : "COINBASE";
+
+  const signatureValue = tx.signature
+    ? htmlEscape(tx.signature)
+    : `<span class="muted">No signature</span>`;
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>DubzChain Transaction ${htmlEscape(shortHash(tx.id, 18))}</title>
+
+<style>
+  :root{
+    --bg:#0b1020;
+    --panel:#121933;
+    --panel-soft:#161f3f;
+    --line:#273156;
+    --text:#e8ecff;
+    --muted:#9aa6d1;
+    --accent:#7aa2ff;
+    --good:#55d98a;
+    --warning:#ffcc66;
+  }
+
+  *{box-sizing:border-box}
+
+  body{
+    margin:0;
+    min-height:100vh;
+    background:
+      radial-gradient(circle at top left,#18224a 0%,#0b1020 46%,#080c18 100%);
+    color:var(--text);
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+  }
+
+  .wrap{
+    max-width:1100px;
+    margin:0 auto;
+    padding:24px;
+  }
+
+  .topbar{
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:20px;
+    flex-wrap:wrap;
+    margin-bottom:16px;
+  }
+
+  .card{
+    background:rgba(18,25,51,.94);
+    border:1px solid var(--line);
+    border-radius:18px;
+    padding:20px;
+    box-shadow:0 12px 40px rgba(0,0,0,.28);
+    margin-bottom:16px;
+  }
+
+  .hero{
+    background:
+      linear-gradient(135deg,rgba(122,162,255,.13),rgba(18,25,51,.96));
+  }
+
+  h1,h2{
+    margin-top:0;
+  }
+
+  h1{
+    margin-bottom:8px;
+    font-size:26px;
+  }
+
+  h2{
+    font-size:18px;
+    margin-bottom:14px;
+  }
+
+  a{
+    color:var(--accent);
+    text-decoration:none;
+  }
+
+  a:hover{
+    text-decoration:underline;
+  }
+
+  .muted{
+    color:var(--muted);
+  }
+
+  .status{
+    display:inline-flex;
+    align-items:center;
+    gap:7px;
+    padding:7px 11px;
+    border-radius:999px;
+    font-weight:700;
+    border:1px solid currentColor;
+  }
+
+  .status::before{
+    content:"";
+    width:8px;
+    height:8px;
+    border-radius:50%;
+    background:currentColor;
+  }
+
+  .confirmed{
+    color:var(--good);
+    background:rgba(85,217,138,.09);
+  }
+
+  .pending{
+    color:var(--warning);
+    background:rgba(255,204,102,.09);
+  }
+
+  .txid{
+    overflow-wrap:anywhere;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+    color:#cbd7ff;
+  }
+
+  .grid{
+    display:grid;
+    grid-template-columns:repeat(3,minmax(0,1fr));
+    gap:12px;
+  }
+
+  .metric{
+    background:rgba(10,16,32,.55);
+    border:1px solid rgba(255,255,255,.08);
+    border-radius:14px;
+    padding:14px;
+  }
+
+  .metric-label{
+    color:var(--muted);
+    font-size:12px;
+    margin-bottom:6px;
+  }
+
+  .metric-value{
+    font-size:17px;
+    font-weight:700;
+    overflow-wrap:anywhere;
+  }
+
+  table{
+    width:100%;
+    border-collapse:collapse;
+  }
+
+  th,td{
+    padding:12px 8px;
+    border-bottom:1px solid rgba(255,255,255,.08);
+    text-align:left;
+    vertical-align:top;
+    overflow-wrap:anywhere;
+  }
+
+  th{
+    width:190px;
+    color:var(--muted);
+    font-weight:600;
+  }
+
+  code{
+    font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+    font-size:12px;
+    overflow-wrap:anywhere;
+  }
+
+  pre{
+    margin:0;
+    white-space:pre-wrap;
+    overflow-wrap:anywhere;
+    background:rgba(10,16,32,.65);
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:14px;
+    font-size:12px;
+    overflow:auto;
+  }
+
+  @media (max-width:760px){
+    .wrap{padding:14px}
+    .grid{grid-template-columns:1fr}
+    th{
+      width:120px;
+    }
+  }
+</style>
+</head>
+
+<body>
+<div class="wrap">
+
+  <div class="card hero">
+    <div class="topbar">
+      <div>
+        <p style="margin-top:0">
+          <a href="/index">← Back to DubzChain Explorer</a>
+        </p>
+
+        <h1>Transaction Details</h1>
+
+        <div class="txid">${htmlEscape(tx.id)}</div>
+      </div>
+
+      <span class="status ${statusClass}">
+        ${statusLabel}
+      </span>
+    </div>
+
+    <p class="muted" style="margin-bottom:0">
+      RPC ${rpcPort} · P2P ${deps.port}
+    </p>
+  </div>
+
+  <div class="grid">
+    <div class="metric">
+      <div class="metric-label">Status</div>
+      <div class="metric-value">${statusLabel}</div>
+    </div>
+
+    <div class="metric">
+      <div class="metric-label">Confirmations</div>
+      <div class="metric-value">${confirmations}</div>
+    </div>
+
+    <div class="metric">
+      <div class="metric-label">Transaction Type</div>
+      <div class="metric-value">${htmlEscape(tx.type)}</div>
+    </div>
+
+    <div class="metric">
+      <div class="metric-label">Amount</div>
+      <div class="metric-value">${tx.amount} DUBZ</div>
+    </div>
+
+    <div class="metric">
+      <div class="metric-label">Fee</div>
+      <div class="metric-value">${tx.fee} DUBZ</div>
+    </div>
+
+    <div class="metric">
+      <div class="metric-label">Nonce</div>
+      <div class="metric-value">${tx.nonce}</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Transaction</h2>
+
+    <table>
+      <tbody>
+        <tr>
+          <th>Transaction ID</th>
+          <td><code>${htmlEscape(tx.id)}</code></td>
+        </tr>
+
+        <tr>
+          <th>Status</th>
+          <td><span class="status ${statusClass}">${statusLabel}</span></td>
+        </tr>
+
+        <tr>
+          <th>Block</th>
+          <td>${blockValue}</td>
+        </tr>
+
+        <tr>
+          <th>Block Hash</th>
+          <td><code>${blockHashValue}</code></td>
+        </tr>
+
+        <tr>
+          <th>Transaction Index</th>
+          <td>${details.txIndex ?? "-"}</td>
+        </tr>
+
+        <tr>
+          <th>Confirmations</th>
+          <td>${confirmations}</td>
+        </tr>
+
+        <tr>
+          <th>Timestamp</th>
+          <td>${htmlEscape(fmtTs(tx.ts))}</td>
+        </tr>
+
+        <tr>
+          <th>Type</th>
+          <td>${htmlEscape(tx.type)}</td>
+        </tr>
+
+        <tr>
+          <th>From</th>
+          <td>
+            <div>${fromDisplay}</div>
+            ${
+              tx.from
+                ? `<pre style="margin-top:10px">${htmlEscape(tx.from)}</pre>`
+                : ""
+            }
+          </td>
+        </tr>
+
+        <tr>
+          <th>To</th>
+          <td>
+            <div>${htmlEscape(shortKey(deps.shortAddress, tx.to))}</div>
+            <pre style="margin-top:10px">${htmlEscape(tx.to)}</pre>
+          </td>
+        </tr>
+
+        <tr>
+          <th>Amount</th>
+          <td>${tx.amount} DUBZ</td>
+        </tr>
+
+        <tr>
+          <th>Fee</th>
+          <td>${tx.fee} DUBZ</td>
+        </tr>
+
+        <tr>
+          <th>Nonce</th>
+          <td>${tx.nonce}</td>
+        </tr>
+
+        <tr>
+          <th>Signature</th>
+          <td><code>${signatureValue}</code></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Raw Transaction JSON</h2>
+    <pre>${htmlEscape(JSON.stringify(tx, null, 2))}</pre>
+  </div>
+
 </div>
 </body>
 </html>`;
@@ -3744,6 +4132,101 @@ export function startRpcServer(deps: RpcServerDeps) {
         return jsonSend(res, 200, out);
       }
 
+      if (method === "GET" && path.startsWith("/tx/")) {
+        let txId = "";
+
+        try {
+          txId = decodeURIComponent(path.slice("/tx/".length)).trim();
+        } catch {
+          return htmlSend(
+            res,
+            400,
+            `<!doctype html>
+            <html>
+              <body style="font-family:sans-serif;background:#0b1020;color:#fff;padding:24px">
+                <h1>Invalid transaction ID</h1>
+                <p>The transaction ID could not be decoded.</p>
+                <p><a href="/index" style="color:#7aa2ff">Back to explorer</a></p>
+              </body>
+            </html>`
+          );
+        }
+
+        if (!txId) {
+          return htmlSend(
+            res,
+            400,
+            `<!doctype html>
+            <html>
+              <body style="font-family:sans-serif;background:#0b1020;color:#fff;padding:24px">
+                <h1>Missing transaction ID</h1>
+                <p><a href="/index" style="color:#7aa2ff">Back to explorer</a></p>
+              </body>
+            </html>`
+          );
+        }
+
+        let foundTx: RpcTxJson | null = null;
+        let status: "confirmed" | "pending" = "pending";
+        let blockHeight: number | null = null;
+        let blockHash: string | null = null;
+        let txIndex: number | null = null;
+
+        const pendingTx = chain.mempool.get(txId);
+
+        if (pendingTx) {
+          foundTx = pendingTx.toJSON() as RpcTxJson;
+        } else {
+          for (let height = chain.blocks.length - 1; height >= 0; height--) {
+            const block = chain.blocks[height];
+            const index = block.txs.findIndex((tx) => tx.id === txId);
+
+            if (index !== -1) {
+              foundTx = block.txs[index];
+              status = "confirmed";
+              blockHeight = height;
+              blockHash = block.hash;
+              txIndex = index;
+              break;
+            }
+          }
+        }
+
+        if (!foundTx) {
+          return htmlSend(
+            res,
+            404,
+            `<!doctype html>
+            <html lang="en">
+            <head>
+              <meta charset="utf-8" />
+              <meta name="viewport" content="width=device-width,initial-scale=1" />
+              <title>Transaction Not Found</title>
+            </head>
+            <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0b1020;color:#fff;padding:24px">
+              <h1>Transaction not found</h1>
+              <p style="word-break:break-all;color:#9aa6d1">${htmlEscape(txId)}</p>
+              <p>The transaction is not currently in the blockchain or mempool.</p>
+              <p><a href="/index" style="color:#7aa2ff">← Back to explorer</a></p>
+            </body>
+            </html>`
+          );
+        }
+
+        return htmlSend(
+          res,
+          200,
+          renderTransactionExplorerHtml(deps, rpcPort, {
+            tx: foundTx,
+            status,
+            blockHeight,
+            blockHash,
+            txIndex,
+            chainHeight: chain.height(),
+          })
+        );
+      }
+
       if (method === "GET" && path === "/index") {
         const heightStr = url.searchParams.get("height");
 
@@ -3833,6 +4316,7 @@ export function startRpcServer(deps: RpcServerDeps) {
             "Explorer",
             "GET  /index",
             "GET  /index?height=123",
+            "GET  /tx/<transaction-id>",
           ].join("\n")
         );
       }
