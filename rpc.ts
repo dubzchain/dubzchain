@@ -739,6 +739,628 @@ function buildForkCompareAgainstCandidate(deps: RpcServerDeps, candidateRaw: any
   };
 }
 
+
+type ExplorerWalletActivity = {
+  tx: RpcTxJson;
+  status: "confirmed" | "pending";
+  blockHeight: number | null;
+  blockHash: string | null;
+  confirmations: number;
+  direction: "sent" | "received" | "mined" | "self";
+};
+
+function getWalletActivity(
+  deps: RpcServerDeps,
+  publicKey: string
+): ExplorerWalletActivity[] {
+  const activity: ExplorerWalletActivity[] = [];
+  const tipHeight = deps.chain.height();
+
+  for (let height = deps.chain.blocks.length - 1; height >= 0; height--) {
+    const block = deps.chain.blocks[height];
+
+    for (let index = block.txs.length - 1; index >= 0; index--) {
+      const tx = block.txs[index];
+      const isFrom = tx.from === publicKey;
+      const isTo = tx.to === publicKey;
+
+      if (!isFrom && !isTo) continue;
+
+      let direction: ExplorerWalletActivity["direction"];
+
+      if (tx.from === null && isTo) {
+        direction = "mined";
+      } else if (isFrom && isTo) {
+        direction = "self";
+      } else if (isFrom) {
+        direction = "sent";
+      } else {
+        direction = "received";
+      }
+
+      activity.push({
+        tx,
+        status: "confirmed",
+        blockHeight: height,
+        blockHash: block.hash,
+        confirmations: Math.max(1, tipHeight - height + 1),
+        direction,
+      });
+    }
+  }
+
+  for (const item of deps.chain.mempool.values()) {
+    const tx = item.toJSON();
+    const isFrom = tx.from === publicKey;
+    const isTo = tx.to === publicKey;
+
+    if (!isFrom && !isTo) continue;
+
+    const direction: ExplorerWalletActivity["direction"] =
+      isFrom && isTo ? "self" : isFrom ? "sent" : "received";
+
+    activity.unshift({
+      tx,
+      status: "pending",
+      blockHeight: null,
+      blockHash: null,
+      confirmations: 0,
+      direction,
+    });
+  }
+
+  return activity;
+}
+
+function renderWalletAddressPage(
+  deps: RpcServerDeps,
+  input: string
+): { status: number; html: string } {
+  const wallet = resolveWalletInfo(deps, input);
+
+  if (!wallet) {
+    return {
+      status: 404,
+      html: `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Wallet Not Found · Dubz Explorer</title>
+  <style>
+    body{margin:0;background:#07120d;color:#eef8f1;font-family:Arial,sans-serif}
+    main{max-width:900px;margin:70px auto;padding:24px}
+    .card{background:#102219;border:1px solid #244332;border-radius:18px;padding:28px}
+    a{color:#82e6a4}
+    code{word-break:break-all}
+  </style>
+</head>
+<body>
+  <main>
+    <div class="card">
+      <h1>Wallet not found</h1>
+      <p>No wallet, address, or public key matched:</p>
+      <code>${htmlEscape(input)}</code>
+      <p><a href="/index">Return to Dubz Explorer</a></p>
+    </div>
+  </main>
+</body>
+</html>`,
+    };
+  }
+
+  const activity = getWalletActivity(deps, wallet.publicKey);
+
+  let totalSent = 0;
+  let totalReceived = 0;
+  let miningRewards = 0;
+  let feesPaid = 0;
+  let confirmedCount = 0;
+  let pendingCount = 0;
+
+  for (const item of activity) {
+    if (item.status === "pending") pendingCount++;
+    else confirmedCount++;
+
+    if (item.direction === "sent") {
+      totalSent += item.tx.amount;
+      feesPaid += item.tx.fee;
+    } else if (item.direction === "received") {
+      totalReceived += item.tx.amount;
+    } else if (item.direction === "mined") {
+      miningRewards += item.tx.amount;
+      totalReceived += item.tx.amount;
+    } else if (item.direction === "self") {
+      feesPaid += item.tx.fee;
+    }
+  }
+
+  const activityRows = activity.length
+    ? activity
+        .slice(0, 100)
+        .map((item) => {
+          const tx = item.tx;
+          const directionLabel =
+            item.direction === "mined"
+              ? "Mining reward"
+              : item.direction === "sent"
+              ? "Sent"
+              : item.direction === "received"
+              ? "Received"
+              : "Self transfer";
+
+          const counterparty =
+            item.direction === "sent"
+              ? deps.shortAddress(tx.to)
+              : item.direction === "received" || item.direction === "mined"
+              ? tx.from === null
+                ? "Coinbase"
+                : deps.shortAddress(tx.from)
+              : wallet.address;
+
+          const amountPrefix =
+            item.direction === "sent" ? "-" : item.direction === "self" ? "" : "+";
+
+          return `
+            <tr>
+              <td>
+                <span class="badge ${item.status}">
+                  ${item.status === "pending" ? "Pending" : "Confirmed"}
+                </span>
+              </td>
+              <td><span class="badge direction">${directionLabel}</span></td>
+              <td>
+                <a class="mono" href="/tx/${encodeURIComponent(tx.id)}">
+                  ${htmlEscape(shortHash(tx.id, 18))}
+                </a>
+              </td>
+              <td class="mono">${htmlEscape(counterparty)}</td>
+              <td class="amount">${amountPrefix}${fmtNumber(tx.amount)} DUBZ</td>
+              <td>${fmtNumber(tx.fee)} DUBZ</td>
+              <td>
+                ${
+                  item.blockHeight === null
+                    ? '<span class="muted">Mempool</span>'
+                    : `<a href="/index?height=${item.blockHeight}">#${item.blockHeight}</a>`
+                }
+              </td>
+              <td>${item.confirmations}</td>
+              <td>${htmlEscape(fmtTs(tx.ts))}</td>
+            </tr>
+          `;
+        })
+        .join("")
+    : `<tr><td colspan="9" class="empty">No transactions found for this wallet.</td></tr>`;
+
+  const pendingEntries =
+    deps.chain.getState().pending.get(wallet.publicKey) ?? [];
+
+  const pendingRewardRows = pendingEntries.length
+    ? pendingEntries
+        .map(
+          (entry, index) => `
+            <tr>
+              <td>${index}</td>
+              <td>${fmtNumber(entry.amount)} DUBZ</td>
+              <td>${entry.unlockHeight}</td>
+              <td>
+                ${
+                  entry.unlockHeight <= deps.chain.height()
+                    ? "Unlocked"
+                    : `${entry.unlockHeight - deps.chain.height()} blocks remaining`
+                }
+              </td>
+              <td>
+                <a href="/proof/pending?address=${encodeURIComponent(wallet.address)}&index=${index}">
+                  View proof
+                </a>
+              </td>
+            </tr>
+          `
+        )
+        .join("")
+    : `<tr><td colspan="5" class="empty">No immature mining rewards.</td></tr>`;
+
+  const publicKeyJson = JSON.stringify(wallet.publicKey);
+
+  return {
+    status: 200,
+    html: `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>${htmlEscape(wallet.address)} · Dubz Explorer</title>
+  <style>
+    :root{
+      color-scheme:dark;
+      --bg:#06100b;
+      --panel:#0d1d14;
+      --panel2:#12271b;
+      --line:#244532;
+      --text:#effaf2;
+      --muted:#93ad9c;
+      --green:#72e69c;
+      --yellow:#f2cd67;
+      --red:#ff8a8a;
+      --blue:#80bfff;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      background:
+        radial-gradient(circle at top left,#123820 0,transparent 32%),
+        var(--bg);
+      color:var(--text);
+      font-family:Inter,Arial,sans-serif;
+    }
+    a{color:var(--green);text-decoration:none}
+    a:hover{text-decoration:underline}
+    header{
+      border-bottom:1px solid var(--line);
+      background:rgba(6,16,11,.92);
+      position:sticky;
+      top:0;
+      z-index:5;
+      backdrop-filter:blur(12px);
+    }
+    .nav{
+      max-width:1320px;
+      margin:auto;
+      padding:18px 24px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:20px;
+    }
+    .brand{font-size:20px;font-weight:800;color:white}
+    .network{font-size:13px;color:var(--muted)}
+    main{max-width:1320px;margin:auto;padding:30px 24px 70px}
+    .breadcrumbs{margin-bottom:18px;color:var(--muted);font-size:14px}
+    .hero{
+      background:linear-gradient(135deg,#10281a,#0c1b13);
+      border:1px solid var(--line);
+      border-radius:22px;
+      padding:28px;
+      margin-bottom:22px;
+      box-shadow:0 24px 70px rgba(0,0,0,.25);
+    }
+    .hero-top{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:20px;
+      flex-wrap:wrap;
+    }
+    h1{margin:0 0 9px;font-size:30px}
+    h2{margin:0 0 16px;font-size:19px}
+    .address{
+      color:var(--green);
+      font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+      word-break:break-all;
+    }
+    .muted{color:var(--muted)}
+    .actions{display:flex;gap:10px;flex-wrap:wrap}
+    button,.button{
+      border:1px solid #356248;
+      border-radius:10px;
+      background:#173824;
+      color:white;
+      padding:10px 14px;
+      font-weight:700;
+      cursor:pointer;
+    }
+    button:hover,.button:hover{background:#205030;text-decoration:none}
+    .grid{
+      display:grid;
+      grid-template-columns:repeat(12,1fr);
+      gap:16px;
+      margin-bottom:22px;
+    }
+    .stat{
+      grid-column:span 3;
+      background:var(--panel);
+      border:1px solid var(--line);
+      border-radius:16px;
+      padding:20px;
+    }
+    .stat-label{font-size:13px;color:var(--muted);margin-bottom:8px}
+    .stat-value{font-size:24px;font-weight:800;word-break:break-word}
+    .stat-note{font-size:12px;color:var(--muted);margin-top:7px}
+    .card{
+      background:var(--panel);
+      border:1px solid var(--line);
+      border-radius:18px;
+      padding:22px;
+      margin-bottom:20px;
+      overflow:hidden;
+    }
+    .details{
+      display:grid;
+      grid-template-columns:180px minmax(0,1fr);
+      gap:0;
+      border:1px solid var(--line);
+      border-radius:12px;
+      overflow:hidden;
+    }
+    .details div{padding:13px 15px;border-bottom:1px solid var(--line)}
+    .details div:nth-last-child(-n+2){border-bottom:0}
+    .details .label{background:var(--panel2);color:var(--muted);font-weight:700}
+    .mono{
+      font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+      word-break:break-all;
+    }
+    details{
+      margin-top:16px;
+      border:1px solid var(--line);
+      border-radius:12px;
+      padding:14px;
+      background:#09160f;
+    }
+    summary{cursor:pointer;font-weight:700}
+    pre{
+      white-space:pre-wrap;
+      word-break:break-all;
+      color:#b9d9c2;
+      font-size:12px;
+      margin:14px 0 0;
+    }
+    .table-wrap{overflow:auto}
+    table{width:100%;border-collapse:collapse;min-width:920px}
+    th,td{
+      text-align:left;
+      padding:13px 12px;
+      border-bottom:1px solid var(--line);
+      white-space:nowrap;
+      font-size:13px;
+    }
+    th{color:var(--muted);font-size:12px;text-transform:uppercase}
+    .amount{font-weight:800}
+    .badge{
+      display:inline-flex;
+      padding:5px 9px;
+      border-radius:999px;
+      font-size:11px;
+      font-weight:800;
+      border:1px solid var(--line);
+    }
+    .confirmed{color:var(--green);background:#102d1c}
+    .pending{color:var(--yellow);background:#332a10}
+    .direction{color:var(--blue);background:#10243a}
+    .empty{text-align:center;color:var(--muted);padding:30px}
+    .section-heading{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:15px;
+      margin-bottom:10px;
+      flex-wrap:wrap;
+    }
+    @media(max-width:950px){
+      .stat{grid-column:span 6}
+    }
+    @media(max-width:620px){
+      .stat{grid-column:span 12}
+      .details{grid-template-columns:1fr}
+      .details .label{border-bottom:0}
+      .details div:nth-last-child(-n+2){border-bottom:1px solid var(--line)}
+      .details div:last-child{border-bottom:0}
+      h1{font-size:24px}
+    }
+  </style>
+</head>
+<body>
+<header>
+  <div class="nav">
+    <a class="brand" href="/index">DUBZ EXPLORER</a>
+    <div class="network">${htmlEscape(deps.chainId)} · Height ${deps.chain.height()}</div>
+  </div>
+</header>
+
+<main>
+  <div class="breadcrumbs">
+    <a href="/index">Explorer</a> / Wallet
+  </div>
+
+  <section class="hero">
+    <div class="hero-top">
+      <div>
+        <div class="muted">Wallet address</div>
+        <h1>${htmlEscape(wallet.address)}</h1>
+        <div class="address">${htmlEscape(wallet.publicKey.slice(0, 90))}...</div>
+      </div>
+
+      <div class="actions">
+        <button type="button" onclick="copyAddress()">Copy address</button>
+        <a class="button" href="/index">Explorer home</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="grid">
+    <div class="stat">
+      <div class="stat-label">Total balance</div>
+      <div class="stat-value">${fmtNumber(wallet.total)} DUBZ</div>
+      <div class="stat-note">Spendable plus immature</div>
+    </div>
+
+    <div class="stat">
+      <div class="stat-label">Spendable</div>
+      <div class="stat-value">${fmtNumber(wallet.spendable)} DUBZ</div>
+      <div class="stat-note">Available to transfer</div>
+    </div>
+
+    <div class="stat">
+      <div class="stat-label">Immature</div>
+      <div class="stat-value">${fmtNumber(wallet.immature)} DUBZ</div>
+      <div class="stat-note">Pending mining maturity</div>
+    </div>
+
+    <div class="stat">
+      <div class="stat-label">Transactions</div>
+      <div class="stat-value">${fmtNumber(activity.length)}</div>
+      <div class="stat-note">${confirmedCount} confirmed · ${pendingCount} pending</div>
+    </div>
+
+    <div class="stat">
+      <div class="stat-label">Total received</div>
+      <div class="stat-value">${fmtNumber(totalReceived)} DUBZ</div>
+      <div class="stat-note">Includes mining rewards</div>
+    </div>
+
+    <div class="stat">
+      <div class="stat-label">Total sent</div>
+      <div class="stat-value">${fmtNumber(totalSent)} DUBZ</div>
+      <div class="stat-note">Transfer amounts only</div>
+    </div>
+
+    <div class="stat">
+      <div class="stat-label">Mining rewards</div>
+      <div class="stat-value">${fmtNumber(miningRewards)} DUBZ</div>
+      <div class="stat-note">Confirmed coinbase rewards</div>
+    </div>
+
+    <div class="stat">
+      <div class="stat-label">Fees paid</div>
+      <div class="stat-value">${fmtNumber(feesPaid)} DUBZ</div>
+      <div class="stat-note">Confirmed and pending</div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Wallet details</h2>
+
+    <div class="details">
+      <div class="label">Short address</div>
+      <div class="mono">${htmlEscape(wallet.address)}</div>
+
+      <div class="label">Resolved through</div>
+      <div>${htmlEscape(wallet.via)}</div>
+
+      <div class="label">Wallet file</div>
+      <div class="mono">${htmlEscape(wallet.walletFile ?? "Not available")}</div>
+
+      <div class="label">Confirmed nonce</div>
+      <div>${wallet.confirmedNonce}</div>
+
+      <div class="label">Next nonce</div>
+      <div>${wallet.nextNonce}</div>
+
+      <div class="label">Balance proof</div>
+      <div>
+        <a href="/proof/balance?address=${encodeURIComponent(wallet.address)}">
+          View balance proof
+        </a>
+      </div>
+
+      <div class="label">Nonce proof</div>
+      <div>
+        <a href="/proof/nonce?address=${encodeURIComponent(wallet.address)}">
+          View nonce proof
+        </a>
+      </div>
+    </div>
+
+    <details>
+      <summary>Full public key</summary>
+      <pre>${htmlEscape(wallet.publicKey)}</pre>
+    </details>
+
+    <details>
+      <summary>Raw wallet JSON</summary>
+      <pre>${htmlEscape(
+        JSON.stringify(
+          {
+            input: wallet.input,
+            via: wallet.via,
+            walletFile: wallet.walletFile,
+            address: wallet.address,
+            publicKey: wallet.publicKey,
+            spendable: wallet.spendable,
+            immature: wallet.immature,
+            total: wallet.total,
+            confirmedNonce: wallet.confirmedNonce,
+            nextNonce: wallet.nextNonce,
+          },
+          null,
+          2
+        )
+      )}</pre>
+    </details>
+  </section>
+
+  <section class="card">
+    <div class="section-heading">
+      <div>
+        <h2>Transaction activity</h2>
+        <div class="muted">Confirmed chain transactions and current mempool activity</div>
+      </div>
+      <div class="muted">Showing up to 100 entries</div>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th>Direction</th>
+            <th>Transaction</th>
+            <th>Counterparty</th>
+            <th>Amount</th>
+            <th>Fee</th>
+            <th>Block</th>
+            <th>Confirmations</th>
+            <th>Time</th>
+          </tr>
+        </thead>
+        <tbody>${activityRows}</tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Immature mining rewards</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Index</th>
+            <th>Amount</th>
+            <th>Unlock height</th>
+            <th>Status</th>
+            <th>State proof</th>
+          </tr>
+        </thead>
+        <tbody>${pendingRewardRows}</tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<script>
+  function copyAddress() {
+    var address = ${JSON.stringify(wallet.address)};
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(address);
+      return;
+    }
+
+    var area = document.createElement("textarea");
+    area.value = address;
+    document.body.appendChild(area);
+    area.select();
+    document.execCommand("copy");
+    area.remove();
+  }
+
+  window.__DUBZ_WALLET_PUBLIC_KEY__ = ${publicKeyJson};
+</script>
+</body>
+</html>`,
+  };
+}
+
 function resolveWalletInfo(deps: RpcServerDeps, input: string): WalletResolvedInfo | null {
   const resolved = deps.resolveAddressToPublicKey(input);
   if (!resolved) return null;
@@ -3447,6 +4069,22 @@ export function startRpcServer(deps: RpcServerDeps) {
           ok: true,
           snapshot,
         });
+      }
+
+      if (method === "GET" && path.startsWith("/address/")) {
+        const inputRaw = path.slice("/address/".length);
+
+        if (!inputRaw) {
+          return htmlSend(
+            res,
+            400,
+            "<h1>Missing wallet address</h1><p><a href='/index'>Return to explorer</a></p>"
+          );
+        }
+
+        const input = safeDecodeURIComponent(inputRaw);
+        const page = renderWalletAddressPage(deps, input);
+        return htmlSend(res, page.status, page.html);
       }
 
       if (method === "GET" && path === "/balance") {
