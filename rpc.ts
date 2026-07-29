@@ -1540,10 +1540,25 @@ function renderExplorerHtml(deps: RpcServerDeps, rpcPort: number, startedAtMs: n
         Live local explorer for node <strong>ws://localhost:${deps.port}</strong>.
         Default wallet file: <strong>${htmlEscape(deps.minerWalletFile)}</strong>.
       </p>
-      <div class="form">
-        <input id="heightInput" placeholder="Jump to block height (example: ${chain.height()})" />
-        <button id="openBlockBtn" type="button">Open block</button>
-      </div>
+      <form class="form" method="GET" action="/search">
+        <input
+          id="explorerSearchInput"
+          name="q"
+          autocomplete="off"
+          required
+          placeholder="Search block height, block hash, transaction ID, or wallet"
+          aria-label="Search DubzChain"
+        />
+        <button type="submit">Search</button>
+      </form>
+
+      <p class="small muted">
+        Search examples:
+        block <strong>${chain.height()}</strong>,
+        transaction ID,
+        block hash, wallet file, or <strong>dubz_</strong> address.
+      </p>
+
       <p class="small muted">Tip hash: ${htmlEscape(tip.hash)}</p>
     </section>
 
@@ -4136,6 +4151,221 @@ export function startRpcServer(deps: RpcServerDeps) {
         return jsonSend(res, 200, out);
       }
 
+      if (method === "GET" && path === "/search") {
+        const query = (url.searchParams.get("q") ?? "").trim();
+
+        const searchPage = (
+          statusCode: number,
+          title: string,
+          message: string
+        ) =>
+          htmlSend(
+            res,
+            statusCode,
+            `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>${htmlEscape(title)} · DubzChain Explorer</title>
+
+  <style>
+    :root{
+      --bg:#0b1020;
+      --panel:#121933;
+      --line:#273156;
+      --text:#e8ecff;
+      --muted:#9aa6d1;
+      --accent:#7aa2ff;
+      --bad:#ff6b81;
+    }
+
+    *{box-sizing:border-box}
+
+    body{
+      margin:0;
+      min-height:100vh;
+      display:grid;
+      place-items:center;
+      padding:24px;
+      background:
+        radial-gradient(circle at top left,#18224a 0%,#0b1020 46%,#080c18 100%);
+      color:var(--text);
+      font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+    }
+
+    .card{
+      width:min(720px,100%);
+      background:rgba(18,25,51,.95);
+      border:1px solid var(--line);
+      border-radius:20px;
+      padding:24px;
+      box-shadow:0 16px 50px rgba(0,0,0,.32);
+    }
+
+    h1{margin:0 0 10px}
+
+    p{
+      color:var(--muted);
+      overflow-wrap:anywhere;
+    }
+
+    a{
+      color:var(--accent);
+      text-decoration:none;
+    }
+
+    a:hover{text-decoration:underline}
+
+    form{
+      display:flex;
+      gap:10px;
+      margin-top:20px;
+    }
+
+    input{
+      flex:1;
+      min-width:0;
+      border:1px solid var(--line);
+      border-radius:12px;
+      padding:12px 14px;
+      background:#0d1430;
+      color:var(--text);
+      outline:none;
+    }
+
+    input:focus{
+      border-color:var(--accent);
+      box-shadow:0 0 0 3px rgba(122,162,255,.14);
+    }
+
+    button{
+      border:0;
+      border-radius:12px;
+      padding:12px 18px;
+      background:var(--accent);
+      color:#081022;
+      font-weight:800;
+      cursor:pointer;
+    }
+
+    @media(max-width:600px){
+      form{flex-direction:column}
+    }
+  </style>
+</head>
+
+<body>
+  <main class="card">
+    <p style="margin-top:0">
+      <a href="/index">← Back to DubzChain Explorer</a>
+    </p>
+
+    <h1>${htmlEscape(title)}</h1>
+    <p>${htmlEscape(message)}</p>
+
+    <form method="GET" action="/search">
+      <input
+        name="q"
+        required
+        autofocus
+        value="${htmlEscape(query)}"
+        placeholder="Block, transaction, or wallet"
+      />
+      <button type="submit">Search</button>
+    </form>
+  </main>
+</body>
+</html>`
+          );
+
+        if (!query) {
+          return searchPage(
+            400,
+            "Enter a search value",
+            "Enter a block height, block hash, transaction ID, wallet file, or DubzChain address."
+          );
+        }
+
+        // Block height
+        if (/^\d+$/.test(query)) {
+          const height = Number(query);
+
+          if (
+            Number.isSafeInteger(height) &&
+            height >= 0 &&
+            height < chain.blocks.length
+          ) {
+            res.statusCode = 302;
+            res.setHeader("Location", `/index?height=${height}`);
+            return res.end();
+          }
+
+          return searchPage(
+            404,
+            "Block not found",
+            `Block height ${query} does not exist on this node. Current height: ${chain.height()}.`
+          );
+        }
+
+        // Block hash
+        const blockHeight = chain.blocks.findIndex(
+          (block) => block.hash === query
+        );
+
+        if (blockHeight !== -1) {
+          res.statusCode = 302;
+          res.setHeader("Location", `/index?height=${blockHeight}`);
+          return res.end();
+        }
+
+        // Pending transaction
+        if (chain.mempool.has(query)) {
+          res.statusCode = 302;
+          res.setHeader("Location", `/tx/${encodeURIComponent(query)}`);
+          return res.end();
+        }
+
+        // Confirmed transaction
+        let transactionFound = false;
+
+        for (
+          let height = chain.blocks.length - 1;
+          height >= 0 && !transactionFound;
+          height--
+        ) {
+          transactionFound = chain.blocks[height].txs.some(
+            (tx) => tx.id === query
+          );
+        }
+
+        if (transactionFound) {
+          res.statusCode = 302;
+          res.setHeader("Location", `/tx/${encodeURIComponent(query)}`);
+          return res.end();
+        }
+
+        // Wallet file, short address, or public key
+        const wallet = deps.resolveAddressToPublicKey(query);
+
+        if (wallet) {
+          const walletInput = wallet.walletFile ?? query;
+
+          res.statusCode = 302;
+          res.setHeader(
+            "Location",
+            `/wallet/lookup?input=${encodeURIComponent(walletInput)}`
+          );
+          return res.end();
+        }
+
+        return searchPage(
+          404,
+          "No results found",
+          `DubzChain could not find a block, transaction, or wallet matching: ${query}`
+        );
+      }
+
       if (method === "GET" && path.startsWith("/tx/")) {
         let txId = "";
 
@@ -4318,6 +4548,7 @@ export function startRpcServer(deps: RpcServerDeps) {
             "POST /send",
             "",
             "Explorer",
+            "GET  /search?q=<block-height|block-hash|transaction-id|wallet>",
             "GET  /index",
             "GET  /index?height=123",
             "GET  /tx/<transaction-id>",
