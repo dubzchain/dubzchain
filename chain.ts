@@ -982,14 +982,19 @@ export class Block {
       elapsedMs: number;
       hashRate: number;
       hash: string;
-    }) => void
-  ): Promise<void> {
+    }) => void,
+    shouldCancel?: () => boolean
+  ): Promise<boolean> {
     const target = "0".repeat(this.difficulty);
     const startedAt = Date.now();
     let ctr = 0;
     let attempts = 0;
 
     while (true) {
+      if (shouldCancel?.()) {
+        return false;
+      }
+
       this.hash = this.computeHash();
       attempts++;
 
@@ -1004,7 +1009,7 @@ export class Block {
           hash: this.hash,
         });
 
-        return;
+        return true;
       }
 
       this.nonce++;
@@ -1023,6 +1028,10 @@ export class Block {
 
         ctr = 0;
         await tick();
+
+        if (shouldCancel?.()) {
+          return false;
+        }
       }
     }
   }

@@ -167,9 +167,19 @@ export type RpcServerDeps = {
   blockRewardAtHeight(height: number): number;
   verifyStateProof(proof: any): boolean;
 
+  controlMining?: (
+    action: "start" | "pause" | "resume" | "stop"
+  ) => {
+    ok: boolean;
+    action: string;
+    message: string;
+  };
+
   getMiningStatus?: () => {
     enabled: boolean;
     active: boolean;
+    paused: boolean;
+    controlState: "running" | "paused" | "stopped";
     mineEmpty: boolean;
     intervalMs: number;
     yieldEvery: number;
@@ -3784,6 +3794,36 @@ export function startRpcServer(deps: RpcServerDeps) {
         });
       }
 
+      if (
+        method === "POST" &&
+        (
+          path === "/mining/start" ||
+          path === "/mining/pause" ||
+          path === "/mining/resume" ||
+          path === "/mining/stop"
+        )
+      ) {
+        if (!deps.controlMining) {
+          return jsonSend(res, 501, {
+            ok: false,
+            error: "mining-control-unavailable",
+          });
+        }
+
+        const action = path.slice("/mining/".length) as
+          | "start"
+          | "pause"
+          | "resume"
+          | "stop";
+
+        const result = deps.controlMining(action);
+
+        return jsonSend(res, result.ok ? 200 : 400, {
+          ...result,
+          mining: deps.getMiningStatus?.() ?? null,
+        });
+      }
+
       if (method === "GET" && path === "/mining") {
         return htmlSend(
           res,
@@ -3842,6 +3882,47 @@ export function startRpcServer(deps: RpcServerDeps) {
       color:#6ee79a;
       font-weight:800;
     }
+
+    .controls{
+      display:flex;
+      flex-wrap:wrap;
+      gap:10px;
+      margin-top:18px;
+    }
+
+    .control-button{
+      border:1px solid #2f5a40;
+      border-radius:10px;
+      padding:10px 16px;
+      color:#effaf2;
+      background:#173824;
+      font-weight:800;
+      cursor:pointer;
+    }
+
+    .control-button:hover{
+      background:#205030;
+    }
+
+    .control-button:disabled{
+      opacity:.45;
+      cursor:not-allowed;
+    }
+
+    .control-button.stop{
+      background:#3a1717;
+      border-color:#704040;
+    }
+
+    .control-button.stop:hover{
+      background:#502020;
+    }
+
+    .control-message{
+      margin-top:12px;
+      color:#94aa9b;
+      min-height:22px;
+    }
     .mono{
       font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
       word-break:break-all;
@@ -3862,6 +3943,30 @@ export function startRpcServer(deps: RpcServerDeps) {
   <section class="card">
     <h1>DubzChain Mining Center</h1>
     <div id="status" class="status">Loading...</div>
+
+    <div class="controls">
+      <button id="startBtn" class="control-button" type="button"
+        onclick="controlMining('start')">
+        Start Mining
+      </button>
+
+      <button id="pauseBtn" class="control-button" type="button"
+        onclick="controlMining('pause')">
+        Pause
+      </button>
+
+      <button id="resumeBtn" class="control-button" type="button"
+        onclick="controlMining('resume')">
+        Resume
+      </button>
+
+      <button id="stopBtn" class="control-button stop" type="button"
+        onclick="controlMining('stop')">
+        Stop Mining
+      </button>
+    </div>
+
+    <div id="controlMessage" class="control-message"></div>
   </section>
 
   <section class="grid">
@@ -3923,11 +4028,58 @@ export function startRpcServer(deps: RpcServerDeps) {
     if (el) el.textContent = value;
   }
 
+  function updateControlButtons(mining) {
+    var startBtn = document.getElementById("startBtn");
+    var pauseBtn = document.getElementById("pauseBtn");
+    var resumeBtn = document.getElementById("resumeBtn");
+    var stopBtn = document.getElementById("stopBtn");
+
+    var state = mining.controlState || "stopped";
+
+    startBtn.disabled = state === "running";
+    pauseBtn.disabled = state !== "running";
+    resumeBtn.disabled = state !== "paused";
+    stopBtn.disabled = state === "stopped";
+  }
+
+  async function controlMining(action) {
+    var message = document.getElementById("controlMessage");
+    message.textContent =
+      action.charAt(0).toUpperCase() + action.slice(1) + " request...";
+
+    try {
+      var response = await fetch("/mining/" + action, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        }
+      });
+
+      var data = await response.json();
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || data.message || "Mining control failed");
+      }
+
+      message.textContent = data.message || "Mining control updated";
+
+      if (data.mining) {
+        updateControlButtons(data.mining);
+      }
+
+      await refresh();
+    } catch (error) {
+      message.textContent = "Error: " + String(error);
+    }
+  }
+
   async function refresh() {
     try {
       var response = await fetch("/mining/status", { cache: "no-store" });
       var data = await response.json();
       var mining = data.mining;
+
+      updateControlButtons(mining);
 
       setText(
         "status",

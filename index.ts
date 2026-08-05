@@ -259,6 +259,9 @@ async function main() {
   const miningRuntime = {
     enabled: false,
     active: false,
+    paused: false,
+    stopRequested: false,
+    controlState: "stopped" as "running" | "paused" | "stopped",
     mineEmpty: false,
     intervalMs: 0,
     yieldEvery: 0,
@@ -285,6 +288,67 @@ async function main() {
       minedAt: number;
     },
   };
+
+  function controlMining(
+    action: "start" | "pause" | "resume" | "stop"
+  ) {
+    if (action === "start") {
+      miningRuntime.enabled = true;
+      miningRuntime.paused = false;
+      miningRuntime.stopRequested = false;
+      miningRuntime.controlState = "running";
+
+      console.log("▶️ Mining started through RPC");
+
+      return {
+        ok: true,
+        action,
+        message: "Mining started",
+      };
+    }
+
+    if (action === "pause") {
+      miningRuntime.paused = true;
+      miningRuntime.stopRequested = true;
+      miningRuntime.controlState = "paused";
+
+      console.log("⏸️ Mining paused through RPC");
+
+      return {
+        ok: true,
+        action,
+        message: "Mining paused",
+      };
+    }
+
+    if (action === "resume") {
+      miningRuntime.enabled = true;
+      miningRuntime.paused = false;
+      miningRuntime.stopRequested = false;
+      miningRuntime.controlState = "running";
+
+      console.log("▶️ Mining resumed through RPC");
+
+      return {
+        ok: true,
+        action,
+        message: "Mining resumed",
+      };
+    }
+
+    miningRuntime.enabled = false;
+    miningRuntime.paused = false;
+    miningRuntime.stopRequested = true;
+    miningRuntime.controlState = "stopped";
+
+    console.log("⏹️ Mining stopped through RPC");
+
+    return {
+      ok: true,
+      action,
+      message: "Mining stopped",
+    };
+  }
 
   console.log(`🔑 Loaded wallet: ${walletFile}`);
   console.log(`⛏️ Miner: ${shortAddress(miner.publicKey)}`);
@@ -385,6 +449,7 @@ async function main() {
       }),
     blockRewardAtHeight,
     verifyStateProof,
+    controlMining,
     getMiningStatus: () => ({
       ...miningRuntime,
       elapsedMs:
@@ -573,68 +638,121 @@ async function main() {
   const yieldEvery = Number.isFinite(yieldEveryRaw) ? Math.max(1000, yieldEveryRaw) : 20000;
 
   miningRuntime.enabled = automine;
+  miningRuntime.paused = false;
+  miningRuntime.stopRequested = false;
+  miningRuntime.controlState = automine ? "running" : "stopped";
   miningRuntime.mineEmpty = mineEmpty;
   miningRuntime.intervalMs = intervalMs;
   miningRuntime.yieldEvery = yieldEvery;
 
   if (automine) {
-    console.log(`⛏️ Auto-miner ON | interval=${intervalMs}ms | mineEmpty=${mineEmpty} | mineYield=${yieldEvery}`);
+    console.log(
+      `⛏️ Auto-miner ON | interval=${intervalMs}ms | mineEmpty=${mineEmpty} | mineYield=${yieldEvery}`
+    );
+  } else {
+    console.log("⛏️ Miner ready but stopped | open /mining to start");
+  }
 
-    while (true) {
-      if (!mineEmpty && chain.mempool.size === 0) {
-        await sleep(Math.max(1, intervalMs));
-        continue;
-      }
+  while (true) {
+    if (!miningRuntime.enabled || miningRuntime.paused) {
+      miningRuntime.active = false;
+      await sleep(250);
+      continue;
+    }
 
-      const blk = chain.buildBlock(miner.publicKey);
+    if (!miningRuntime.mineEmpty && chain.mempool.size === 0) {
+      miningRuntime.active = false;
+      await sleep(Math.max(250, miningRuntime.intervalMs));
+      continue;
+    }
 
-      miningRuntime.active = true;
-      miningRuntime.startedAt = Date.now();
-      miningRuntime.currentHeight = chain.height() + 1;
-      miningRuntime.difficulty = blk.difficulty;
-      miningRuntime.nonce = blk.nonce;
-      miningRuntime.attempts = 0;
-      miningRuntime.hashRate = 0;
-      miningRuntime.currentHash = blk.hash;
+    const blk = chain.buildBlock(miner.publicKey);
 
-      await blk.mineAsync(yieldEvery, (progress) => {
+    miningRuntime.stopRequested = false;
+    miningRuntime.active = true;
+    miningRuntime.startedAt = Date.now();
+    miningRuntime.currentHeight = chain.height() + 1;
+    miningRuntime.difficulty = blk.difficulty;
+    miningRuntime.nonce = blk.nonce;
+    miningRuntime.attempts = 0;
+    miningRuntime.hashRate = 0;
+    miningRuntime.currentHash = blk.hash;
+
+    const mined = await blk.mineAsync(
+      miningRuntime.yieldEvery,
+      (progress) => {
         miningRuntime.nonce = progress.nonce;
         miningRuntime.attempts = progress.attempts;
         miningRuntime.hashRate = progress.hashRate;
         miningRuntime.currentHash = progress.hash;
-      });
+      },
+      () =>
+        miningRuntime.stopRequested ||
+        !miningRuntime.enabled ||
+        miningRuntime.paused
+    );
 
-      miningRuntime.active = false;
+    miningRuntime.active = false;
 
-      const ok2 = chain.tryAddBlock(blk);
-      if (ok2) {
-        broadcastBlock(blk);
+    if (!mined) {
+      miningRuntime.hashRate = 0;
 
-        const fees = blk.txs.slice(1).reduce((s, t) => s + t.fee, 0);
-        const subsidy = blk.txs[0].amount - fees;
+      console.log(
+        miningRuntime.paused
+          ? "⏸️ Current mining attempt cancelled for pause"
+          : "⏹️ Current mining attempt cancelled"
+      );
 
-        miningRuntime.blocksMined++;
-        miningRuntime.totalSubsidy += subsidy;
-        miningRuntime.totalFees += fees;
-        miningRuntime.lastBlock = {
-          height: chain.height(),
-          hash: blk.hash,
-          nonce: blk.nonce,
-          difficulty: blk.difficulty,
-          txCount: blk.txs.length,
-          subsidy,
-          fees,
-          minedAt: Date.now(),
-        };
+      await tick();
+      continue;
+    }
 
-        console.log(
-          `⛏️ Mined block #${chain.height()} | diff=${blk.difficulty} | subsidy=${subsidy} | fees=${fees} | txs=${blk.txs.length} | stateRoot=${blk.stateRoot.slice(0, 16)}... | orphans=${chain.orphanCount()}`
-        );
-        console.log(`📦 Mempool now: ${chain.mempool.size}`);
+    const ok2 = chain.tryAddBlock(blk);
+
+    if (ok2) {
+      broadcastBlock(blk);
+
+      const fees = blk.txs
+        .slice(1)
+        .reduce((sum, tx) => sum + tx.fee, 0);
+
+      const subsidy = blk.txs[0].amount - fees;
+
+      miningRuntime.blocksMined++;
+      miningRuntime.totalSubsidy += subsidy;
+      miningRuntime.totalFees += fees;
+      miningRuntime.lastBlock = {
+        height: chain.height(),
+        hash: blk.hash,
+        nonce: blk.nonce,
+        difficulty: blk.difficulty,
+        txCount: blk.txs.length,
+        subsidy,
+        fees,
+        minedAt: Date.now(),
+      };
+
+      console.log(
+        `⛏️ Mined block #${chain.height()} | diff=${blk.difficulty} | subsidy=${subsidy} | fees=${fees} | txs=${blk.txs.length} | stateRoot=${blk.stateRoot.slice(0, 16)}... | orphans=${chain.orphanCount()}`
+      );
+
+      console.log(`📦 Mempool now: ${chain.mempool.size}`);
+    }
+
+    if (miningRuntime.intervalMs > 0) {
+      let remaining = miningRuntime.intervalMs;
+
+      while (
+        remaining > 0 &&
+        miningRuntime.enabled &&
+        !miningRuntime.paused
+      ) {
+        const wait = Math.min(250, remaining);
+        await sleep(wait);
+        remaining -= wait;
       }
-
-      if (intervalMs > 0) await sleep(intervalMs);
-      else await tick();
+    } else {
+      await tick();
     }
   }
 }
