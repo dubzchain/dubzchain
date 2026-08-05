@@ -974,18 +974,53 @@ export class Block {
     }
   }
 
-  async mineAsync(yieldEveryNonces = 20_000): Promise<void> {
+  async mineAsync(
+    yieldEveryNonces = 20_000,
+    onProgress?: (progress: {
+      nonce: number;
+      attempts: number;
+      elapsedMs: number;
+      hashRate: number;
+      hash: string;
+    }) => void
+  ): Promise<void> {
     const target = "0".repeat(this.difficulty);
+    const startedAt = Date.now();
     let ctr = 0;
+    let attempts = 0;
 
     while (true) {
       this.hash = this.computeHash();
-      if (this.hash.startsWith(target)) return;
+      attempts++;
+
+      if (this.hash.startsWith(target)) {
+        const elapsedMs = Math.max(1, Date.now() - startedAt);
+
+        onProgress?.({
+          nonce: this.nonce,
+          attempts,
+          elapsedMs,
+          hashRate: Math.round((attempts * 1000) / elapsedMs),
+          hash: this.hash,
+        });
+
+        return;
+      }
 
       this.nonce++;
       ctr++;
 
       if (ctr >= yieldEveryNonces) {
+        const elapsedMs = Math.max(1, Date.now() - startedAt);
+
+        onProgress?.({
+          nonce: this.nonce,
+          attempts,
+          elapsedMs,
+          hashRate: Math.round((attempts * 1000) / elapsedMs),
+          hash: this.hash,
+        });
+
         ctr = 0;
         await tick();
       }

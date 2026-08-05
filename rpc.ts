@@ -166,6 +166,37 @@ export type RpcServerDeps = {
   submitTxToLocalNode(port: number, tx: any): Promise<boolean>;
   blockRewardAtHeight(height: number): number;
   verifyStateProof(proof: any): boolean;
+
+  getMiningStatus?: () => {
+    enabled: boolean;
+    active: boolean;
+    mineEmpty: boolean;
+    intervalMs: number;
+    yieldEvery: number;
+    minerWalletFile: string;
+    minerAddress: string;
+    startedAt: number | null;
+    elapsedMs: number;
+    currentHeight: number | null;
+    difficulty: number | null;
+    nonce: number;
+    attempts: number;
+    hashRate: number;
+    currentHash: string | null;
+    blocksMined: number;
+    totalSubsidy: number;
+    totalFees: number;
+    lastBlock: null | {
+      height: number;
+      hash: string;
+      nonce: number;
+      difficulty: number;
+      txCount: number;
+      subsidy: number;
+      fees: number;
+      minedAt: number;
+    };
+  };
 };
 
 type ExplorerSendHistoryItem = {
@@ -3750,6 +3781,213 @@ export function startRpcServer(deps: RpcServerDeps) {
         return jsonSend(res, 200, {
           ok: true,
           telemetry: getTelemetryStats(),
+        });
+      }
+
+      if (method === "GET" && path === "/mining") {
+        return htmlSend(
+          res,
+          200,
+          `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>DubzChain Mining Center</title>
+  <style>
+    body{
+      margin:0;
+      background:#07110b;
+      color:#effaf2;
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    }
+    main{
+      max-width:1000px;
+      margin:0 auto;
+      padding:30px 20px;
+    }
+    .card{
+      background:#0d1912;
+      border:1px solid #244432;
+      border-radius:18px;
+      padding:22px;
+      margin-bottom:18px;
+    }
+    .grid{
+      display:grid;
+      grid-template-columns:repeat(4,1fr);
+      gap:14px;
+    }
+    .stat{
+      background:#12241a;
+      border:1px solid #244432;
+      border-radius:14px;
+      padding:16px;
+    }
+    .label{
+      color:#94aa9b;
+      font-size:12px;
+      margin-bottom:6px;
+    }
+    .value{
+      font-size:22px;
+      font-weight:800;
+      word-break:break-word;
+    }
+    .status{
+      display:inline-block;
+      padding:7px 12px;
+      border-radius:999px;
+      background:#173824;
+      color:#6ee79a;
+      font-weight:800;
+    }
+    .mono{
+      font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+      word-break:break-all;
+    }
+    a{color:#6ee79a}
+    @media(max-width:800px){
+      .grid{grid-template-columns:repeat(2,1fr)}
+    }
+    @media(max-width:500px){
+      .grid{grid-template-columns:1fr}
+    }
+  </style>
+</head>
+<body>
+<main>
+  <p><a href="/index">← Back to Explorer</a></p>
+
+  <section class="card">
+    <h1>DubzChain Mining Center</h1>
+    <div id="status" class="status">Loading...</div>
+  </section>
+
+  <section class="grid">
+    <div class="stat">
+      <div class="label">Current Height</div>
+      <div id="height" class="value">-</div>
+    </div>
+
+    <div class="stat">
+      <div class="label">Difficulty</div>
+      <div id="difficulty" class="value">-</div>
+    </div>
+
+    <div class="stat">
+      <div class="label">Hash Rate</div>
+      <div id="hashRate" class="value">-</div>
+    </div>
+
+    <div class="stat">
+      <div class="label">Nonce</div>
+      <div id="nonce" class="value">-</div>
+    </div>
+
+    <div class="stat">
+      <div class="label">Attempts</div>
+      <div id="attempts" class="value">-</div>
+    </div>
+
+    <div class="stat">
+      <div class="label">Blocks Mined</div>
+      <div id="blocksMined" class="value">-</div>
+    </div>
+
+    <div class="stat">
+      <div class="label">Rewards</div>
+      <div id="rewards" class="value">-</div>
+    </div>
+
+    <div class="stat">
+      <div class="label">Miner Address</div>
+      <div id="minerAddress" class="value mono">-</div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Current Hash</h2>
+    <div id="currentHash" class="mono">-</div>
+  </section>
+
+  <section class="card">
+    <h2>Last Mined Block</h2>
+    <div id="lastBlock">No block mined this session.</div>
+  </section>
+</main>
+
+<script>
+  function setText(id, value) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = value;
+  }
+
+  async function refresh() {
+    try {
+      var response = await fetch("/mining/status", { cache: "no-store" });
+      var data = await response.json();
+      var mining = data.mining;
+
+      setText(
+        "status",
+        mining.enabled
+          ? mining.active
+            ? "Mining block #" + mining.currentHeight
+            : "Waiting for next cycle"
+          : "Mining disabled"
+      );
+
+      setText("height", mining.currentHeight ?? "-");
+      setText("difficulty", mining.difficulty ?? "-");
+      setText("hashRate", Number(mining.hashRate || 0).toLocaleString() + " H/s");
+      setText("nonce", Number(mining.nonce || 0).toLocaleString());
+      setText("attempts", Number(mining.attempts || 0).toLocaleString());
+      setText("blocksMined", Number(mining.blocksMined || 0).toLocaleString());
+      setText(
+        "rewards",
+        Number(
+          Number(mining.totalSubsidy || 0) +
+          Number(mining.totalFees || 0)
+        ).toLocaleString() + " DUBZ"
+      );
+      setText("minerAddress", mining.minerAddress || "-");
+      setText("currentHash", mining.currentHash || "-");
+
+      if (mining.lastBlock) {
+        document.getElementById("lastBlock").innerHTML =
+          '<a href="/index?height=' + mining.lastBlock.height + '">' +
+          "Block #" + mining.lastBlock.height +
+          "</a><br><br>" +
+          '<span class="mono">' + mining.lastBlock.hash + "</span><br><br>" +
+          "Reward: " + mining.lastBlock.subsidy + " DUBZ<br>" +
+          "Fees: " + mining.lastBlock.fees + " DUBZ<br>" +
+          "Transactions: " + mining.lastBlock.txCount;
+      }
+    } catch (error) {
+      setText("status", "Telemetry disconnected");
+    }
+  }
+
+  refresh();
+  setInterval(refresh, 1000);
+</script>
+</body>
+</html>`
+        );
+      }
+
+      if (method === "GET" && path === "/mining/status") {
+        if (!deps.getMiningStatus) {
+          return jsonSend(res, 501, {
+            ok: false,
+            error: "mining-status-unavailable",
+          });
+        }
+
+        return jsonSend(res, 200, {
+          ok: true,
+          mining: deps.getMiningStatus(),
         });
       }
 

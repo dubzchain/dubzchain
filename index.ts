@@ -255,6 +255,37 @@ async function main() {
   }
 
   const miner = ensureWallet(walletFile, shortAddress);
+
+  const miningRuntime = {
+    enabled: false,
+    active: false,
+    mineEmpty: false,
+    intervalMs: 0,
+    yieldEvery: 0,
+    minerWalletFile: walletFile,
+    minerAddress: shortAddress(miner.publicKey),
+    startedAt: null as number | null,
+    currentHeight: null as number | null,
+    difficulty: null as number | null,
+    nonce: 0,
+    attempts: 0,
+    hashRate: 0,
+    currentHash: null as string | null,
+    blocksMined: 0,
+    totalSubsidy: 0,
+    totalFees: 0,
+    lastBlock: null as null | {
+      height: number;
+      hash: string;
+      nonce: number;
+      difficulty: number;
+      txCount: number;
+      subsidy: number;
+      fees: number;
+      minedAt: number;
+    },
+  };
+
   console.log(`🔑 Loaded wallet: ${walletFile}`);
   console.log(`⛏️ Miner: ${shortAddress(miner.publicKey)}`);
   console.log(`🧬 chainId=${CHAIN_ID} v${PROTOCOL_VERSION} magic=0x${NETWORK_MAGIC.toString(16)}`);
@@ -354,6 +385,13 @@ async function main() {
       }),
     blockRewardAtHeight,
     verifyStateProof,
+    getMiningStatus: () => ({
+      ...miningRuntime,
+      elapsedMs:
+        miningRuntime.active && miningRuntime.startedAt
+          ? Date.now() - miningRuntime.startedAt
+          : 0,
+    }),
   });
 
   console.log(`🚀 DubzNode running on ws://${host}:${port}`);
@@ -534,6 +572,11 @@ async function main() {
   const yieldEveryRaw = parseInt(argValue(process.argv, "--mine-yield") || "20000", 10);
   const yieldEvery = Number.isFinite(yieldEveryRaw) ? Math.max(1000, yieldEveryRaw) : 20000;
 
+  miningRuntime.enabled = automine;
+  miningRuntime.mineEmpty = mineEmpty;
+  miningRuntime.intervalMs = intervalMs;
+  miningRuntime.yieldEvery = yieldEvery;
+
   if (automine) {
     console.log(`⛏️ Auto-miner ON | interval=${intervalMs}ms | mineEmpty=${mineEmpty} | mineYield=${yieldEvery}`);
 
@@ -544,7 +587,24 @@ async function main() {
       }
 
       const blk = chain.buildBlock(miner.publicKey);
-      await blk.mineAsync(yieldEvery);
+
+      miningRuntime.active = true;
+      miningRuntime.startedAt = Date.now();
+      miningRuntime.currentHeight = chain.height() + 1;
+      miningRuntime.difficulty = blk.difficulty;
+      miningRuntime.nonce = blk.nonce;
+      miningRuntime.attempts = 0;
+      miningRuntime.hashRate = 0;
+      miningRuntime.currentHash = blk.hash;
+
+      await blk.mineAsync(yieldEvery, (progress) => {
+        miningRuntime.nonce = progress.nonce;
+        miningRuntime.attempts = progress.attempts;
+        miningRuntime.hashRate = progress.hashRate;
+        miningRuntime.currentHash = progress.hash;
+      });
+
+      miningRuntime.active = false;
 
       const ok2 = chain.tryAddBlock(blk);
       if (ok2) {
@@ -552,6 +612,20 @@ async function main() {
 
         const fees = blk.txs.slice(1).reduce((s, t) => s + t.fee, 0);
         const subsidy = blk.txs[0].amount - fees;
+
+        miningRuntime.blocksMined++;
+        miningRuntime.totalSubsidy += subsidy;
+        miningRuntime.totalFees += fees;
+        miningRuntime.lastBlock = {
+          height: chain.height(),
+          hash: blk.hash,
+          nonce: blk.nonce,
+          difficulty: blk.difficulty,
+          txCount: blk.txs.length,
+          subsidy,
+          fees,
+          minedAt: Date.now(),
+        };
 
         console.log(
           `⛏️ Mined block #${chain.height()} | diff=${blk.difficulty} | subsidy=${subsidy} | fees=${fees} | txs=${blk.txs.length} | stateRoot=${blk.stateRoot.slice(0, 16)}... | orphans=${chain.orphanCount()}`
