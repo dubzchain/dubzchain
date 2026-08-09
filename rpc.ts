@@ -3793,20 +3793,63 @@ function renderBlockExplorerHtml(
   height: number,
   block: RpcBlockJson
 ) {
+  const chainHeight = deps.chain.height();
+  const confirmations = Math.max(0, chainHeight - height + 1);
+
+  const coinbase = block.txs.length > 0 && block.txs[0].type === "COINBASE"
+    ? block.txs[0]
+    : null;
+
+  const transferTxs = block.txs.filter((tx) => tx.type === "TRANSFER");
+
+  const totalFees = transferTxs.reduce(
+    (sum, tx) => sum + Number(tx.fee || 0),
+    0
+  );
+
+  const subsidy = deps.blockRewardAtHeight(height);
+  const totalReward = subsidy + totalFees;
+
+  const minerAddress = coinbase
+    ? deps.shortAddress(coinbase.to)
+    : "Unknown";
+
+  const rawJson = JSON.stringify(block);
+  const blockSizeBytes = Buffer.byteLength(rawJson, "utf8");
+
+  const previousLink =
+    height > 0
+      ? `<a class="navButton" href="/index?height=${height - 1}">← Block ${height - 1}</a>`
+      : `<span class="navButton disabled">← Genesis</span>`;
+
+  const nextLink =
+    height < chainHeight
+      ? `<a class="navButton" href="/index?height=${height + 1}">Block ${height + 1} →</a>`
+      : `<span class="navButton disabled">Chain Tip →</span>`;
+
   const txRows =
     block.txs.length === 0
-      ? `<tr><td colspan="7" class="muted">No transactions</td></tr>`
+      ? `<tr><td colspan="8" class="muted">No transactions</td></tr>`
       : block.txs
           .map(
             (t, idx) => `
       <tr>
         <td>${idx}</td>
-        <td><a href="/tx/${encodeURIComponent(t.id)}">${htmlEscape(shortHash(t.id, 18))}</a></td>
-        <td>${htmlEscape(t.type)}</td>
-        <td>${htmlEscape(t.from ? shortKey(deps.shortAddress, t.from) : "null")}</td>
+        <td>
+          <a href="/tx/${encodeURIComponent(t.id)}">
+            ${htmlEscape(shortHash(t.id, 18))}
+          </a>
+        </td>
+        <td>
+          <span class="typeBadge ${t.type === "COINBASE" ? "coinbase" : "transfer"}">
+            ${htmlEscape(t.type)}
+          </span>
+        </td>
+        <td>${htmlEscape(t.from ? shortKey(deps.shortAddress, t.from) : "COINBASE")}</td>
         <td>${htmlEscape(shortKey(deps.shortAddress, t.to))}</td>
         <td>${t.amount}</td>
         <td>${t.fee}</td>
+        <td>${t.nonce}</td>
       </tr>
     `
           )
@@ -3818,32 +3861,136 @@ function renderBlockExplorerHtml(
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>DubzChain Block ${height}</title>
+
 <style>
   :root{
     --bg:#0b1020;
     --panel:#121933;
+    --panelSoft:#161f3f;
     --line:#273156;
     --text:#e8ecff;
     --muted:#9aa6d1;
     --accent:#7aa2ff;
+    --good:#55d98a;
+    --gold:#ffd166;
   }
+
   *{box-sizing:border-box}
+
   body{
     margin:0;
-    background:radial-gradient(circle at top left,#18224a 0%,#0b1020 45%,#080c18 100%);
+    min-height:100vh;
+    background:
+      radial-gradient(circle at top left,#18224a 0%,#0b1020 45%,#080c18 100%);
     color:var(--text);
     font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
   }
-  .wrap{max-width:1100px;margin:0 auto;padding:24px}
+
+  .wrap{
+    max-width:1180px;
+    margin:0 auto;
+    padding:24px;
+  }
+
   .card{
-    background:rgba(18,25,51,.92);
+    background:rgba(18,25,51,.94);
     border:1px solid var(--line);
     border-radius:18px;
-    padding:18px;
+    padding:20px;
     box-shadow:0 12px 40px rgba(0,0,0,.28);
     margin-bottom:16px;
   }
-  table{width:100%;border-collapse:collapse}
+
+  .hero{
+    background:
+      linear-gradient(135deg,rgba(122,162,255,.14),rgba(18,25,51,.96));
+  }
+
+  h1,h2{
+    margin-top:0;
+  }
+
+  h1{
+    margin-bottom:7px;
+    font-size:28px;
+  }
+
+  h2{
+    font-size:18px;
+    margin-bottom:14px;
+  }
+
+  a{
+    color:var(--accent);
+    text-decoration:none;
+  }
+
+  a:hover{
+    text-decoration:underline;
+  }
+
+  .muted{
+    color:var(--muted);
+  }
+
+  .navigation{
+    display:flex;
+    justify-content:space-between;
+    gap:12px;
+    flex-wrap:wrap;
+    margin-top:18px;
+  }
+
+  .navButton{
+    display:inline-flex;
+    padding:9px 13px;
+    border-radius:10px;
+    background:var(--panelSoft);
+    border:1px solid var(--line);
+  }
+
+  .navButton.disabled{
+    color:var(--muted);
+    opacity:.55;
+  }
+
+  .stats{
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    gap:12px;
+  }
+
+  .stat{
+    background:var(--panelSoft);
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:15px;
+  }
+
+  .statLabel{
+    color:var(--muted);
+    font-size:12px;
+    margin-bottom:6px;
+  }
+
+  .statValue{
+    font-size:19px;
+    font-weight:700;
+  }
+
+  .good{
+    color:var(--good);
+  }
+
+  .gold{
+    color:var(--gold);
+  }
+
+  table{
+    width:100%;
+    border-collapse:collapse;
+  }
+
   th,td{
     padding:10px 8px;
     border-bottom:1px solid rgba(255,255,255,.08);
@@ -3851,9 +3998,32 @@ function renderBlockExplorerHtml(
     vertical-align:top;
     word-break:break-word;
   }
-  th{color:var(--muted);font-weight:600}
-  a{color:var(--accent);text-decoration:none}
-  a:hover{text-decoration:underline}
+
+  th{
+    color:var(--muted);
+    font-weight:600;
+  }
+
+  .typeBadge{
+    display:inline-block;
+    padding:4px 8px;
+    border-radius:999px;
+    font-size:11px;
+    font-weight:700;
+  }
+
+  .typeBadge.coinbase{
+    background:rgba(255,209,102,.13);
+    color:var(--gold);
+    border:1px solid rgba(255,209,102,.35);
+  }
+
+  .typeBadge.transfer{
+    background:rgba(85,217,138,.12);
+    color:var(--good);
+    border:1px solid rgba(85,217,138,.32);
+  }
+
   pre{
     margin:0;
     white-space:pre-wrap;
@@ -3862,34 +4032,153 @@ function renderBlockExplorerHtml(
     border-radius:14px;
     padding:12px;
     font-size:12px;
+    overflow:auto;
   }
-  .muted{color:var(--muted)}
+
+  @media(max-width:850px){
+    .stats{
+      grid-template-columns:repeat(2,1fr);
+    }
+  }
+
+  @media(max-width:520px){
+    .stats{
+      grid-template-columns:1fr;
+    }
+
+    .wrap{
+      padding:14px;
+    }
+  }
 </style>
 </head>
+
 <body>
+
 <div class="wrap">
-  <div class="card">
+
+  <div class="card hero">
+    <div class="muted">DUBZCHAIN BLOCK</div>
     <h1>Block #${height}</h1>
-    <p><a href="/index">← Back to explorer</a> · RPC ${rpcPort} · P2P ${deps.port}</p>
+
+    <p class="muted">
+      ${confirmations} confirmation${confirmations === 1 ? "" : "s"}
+      · RPC ${rpcPort}
+      · P2P ${deps.port}
+    </p>
+
+    <div class="navigation">
+      ${previousLink}
+
+      <a class="navButton" href="/index">
+        Explorer
+      </a>
+
+      ${nextLink}
+    </div>
   </div>
 
   <div class="card">
-    <h2>Header</h2>
+    <h2>Block Analytics</h2>
+
+    <div class="stats">
+
+      <div class="stat">
+        <div class="statLabel">Confirmations</div>
+        <div class="statValue good">${confirmations}</div>
+      </div>
+
+      <div class="stat">
+        <div class="statLabel">Transactions</div>
+        <div class="statValue">${block.txs.length}</div>
+      </div>
+
+      <div class="stat">
+        <div class="statLabel">Transfers</div>
+        <div class="statValue">${transferTxs.length}</div>
+      </div>
+
+      <div class="stat">
+        <div class="statLabel">Block Size</div>
+        <div class="statValue">${blockSizeBytes.toLocaleString()} B</div>
+      </div>
+
+      <div class="stat">
+        <div class="statLabel">Subsidy</div>
+        <div class="statValue gold">${subsidy} DUBZ</div>
+      </div>
+
+      <div class="stat">
+        <div class="statLabel">Fees</div>
+        <div class="statValue">${totalFees} DUBZ</div>
+      </div>
+
+      <div class="stat">
+        <div class="statLabel">Miner Reward</div>
+        <div class="statValue good">${totalReward} DUBZ</div>
+      </div>
+
+      <div class="stat">
+        <div class="statLabel">Difficulty</div>
+        <div class="statValue">${block.difficulty}</div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Block Header</h2>
+
     <table>
       <tbody>
-        <tr><th>Hash</th><td>${htmlEscape(block.hash)}</td></tr>
-        <tr><th>Prev Hash</th><td>${htmlEscape(block.prevHash || "GENESIS")}</td></tr>
-        <tr><th>Timestamp</th><td>${htmlEscape(fmtTs(block.ts))}</td></tr>
-        <tr><th>Difficulty</th><td>${block.difficulty}</td></tr>
-        <tr><th>Nonce</th><td>${block.nonce}</td></tr>
-        <tr><th>State Root</th><td>${htmlEscape(block.stateRoot)}</td></tr>
-        <tr><th>Tx Count</th><td>${block.txs.length}</td></tr>
+
+        <tr>
+          <th>Height</th>
+          <td>${height}</td>
+        </tr>
+
+        <tr>
+          <th>Hash</th>
+          <td>${htmlEscape(block.hash)}</td>
+        </tr>
+
+        <tr>
+          <th>Previous Hash</th>
+          <td>${htmlEscape(block.prevHash || "GENESIS")}</td>
+        </tr>
+
+        <tr>
+          <th>Timestamp</th>
+          <td>${htmlEscape(fmtTs(block.ts))}</td>
+        </tr>
+
+        <tr>
+          <th>Miner</th>
+          <td>${htmlEscape(minerAddress)}</td>
+        </tr>
+
+        <tr>
+          <th>Nonce</th>
+          <td>${block.nonce}</td>
+        </tr>
+
+        <tr>
+          <th>Difficulty</th>
+          <td>${block.difficulty}</td>
+        </tr>
+
+        <tr>
+          <th>State Root</th>
+          <td>${htmlEscape(block.stateRoot)}</td>
+        </tr>
+
       </tbody>
     </table>
   </div>
 
   <div class="card">
     <h2>Transactions</h2>
+
     <table>
       <thead>
         <tr>
@@ -3900,19 +4189,24 @@ function renderBlockExplorerHtml(
           <th>To</th>
           <th>Amount</th>
           <th>Fee</th>
+          <th>Nonce</th>
         </tr>
       </thead>
+
       <tbody>
         ${txRows}
       </tbody>
+
     </table>
   </div>
 
   <div class="card">
-    <h2>Raw JSON</h2>
+    <h2>Raw Block Data</h2>
     <pre>${htmlEscape(JSON.stringify(block, null, 2))}</pre>
   </div>
+
 </div>
+
 </body>
 </html>`;
 }
