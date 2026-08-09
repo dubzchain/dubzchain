@@ -196,6 +196,17 @@ export type RpcServerDeps = {
     blocksMined: number;
     totalSubsidy: number;
     totalFees: number;
+    history: Array<{
+      height: number;
+      hash: string;
+      nonce: number;
+      difficulty: number;
+      txCount: number;
+      subsidy: number;
+      fees: number;
+      totalReward: number;
+      minedAt: number;
+    }>;
     lastBlock: null | {
       height: number;
       hash: string;
@@ -4646,6 +4657,35 @@ export function startRpcServer(deps: RpcServerDeps) {
     <h2>Last Mined Block</h2>
     <div id="lastBlock">No block mined this session.</div>
   </section>
+
+  <section class="card">
+    <h2>Mining Session History</h2>
+
+    <div style="overflow:auto">
+      <table style="width:100%;border-collapse:collapse;min-width:760px">
+        <thead>
+          <tr>
+            <th style="text-align:left;padding:10px 8px">Height</th>
+            <th style="text-align:left;padding:10px 8px">Time</th>
+            <th style="text-align:left;padding:10px 8px">Difficulty</th>
+            <th style="text-align:left;padding:10px 8px">TXs</th>
+            <th style="text-align:left;padding:10px 8px">Subsidy</th>
+            <th style="text-align:left;padding:10px 8px">Fees</th>
+            <th style="text-align:left;padding:10px 8px">Total</th>
+            <th style="text-align:left;padding:10px 8px">Hash</th>
+          </tr>
+        </thead>
+
+        <tbody id="miningHistory">
+          <tr>
+            <td colspan="8" style="padding:16px;color:#94aa9b">
+              No blocks mined this session.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
 </main>
 
 <script>
@@ -4666,6 +4706,65 @@ export function startRpcServer(deps: RpcServerDeps) {
     pauseBtn.disabled = state !== "running";
     resumeBtn.disabled = state !== "paused";
     stopBtn.disabled = state === "stopped";
+  }
+
+  function renderMiningHistory(history) {
+    var body = document.getElementById("miningHistory");
+
+    if (!body) return;
+
+    if (!Array.isArray(history) || history.length === 0) {
+      body.innerHTML =
+        '<tr><td colspan="8" style="padding:16px;color:#94aa9b">' +
+        'No blocks mined this session.' +
+        '</td></tr>';
+      return;
+    }
+
+    body.innerHTML = history.map(function(item) {
+      var hashShort =
+        item.hash && item.hash.length > 20
+          ? item.hash.slice(0, 10) + "..." + item.hash.slice(-8)
+          : item.hash || "-";
+
+      return (
+        "<tr>" +
+          '<td style="padding:10px 8px;border-top:1px solid #244432">' +
+            '<a href="/index?height=' + encodeURIComponent(item.height) + '">' +
+              "#" + Number(item.height).toLocaleString() +
+            "</a>" +
+          "</td>" +
+
+          '<td style="padding:10px 8px;border-top:1px solid #244432">' +
+            new Date(item.minedAt).toLocaleTimeString() +
+          "</td>" +
+
+          '<td style="padding:10px 8px;border-top:1px solid #244432">' +
+            item.difficulty +
+          "</td>" +
+
+          '<td style="padding:10px 8px;border-top:1px solid #244432">' +
+            item.txCount +
+          "</td>" +
+
+          '<td style="padding:10px 8px;border-top:1px solid #244432">' +
+            Number(item.subsidy).toLocaleString() + " DUBZ" +
+          "</td>" +
+
+          '<td style="padding:10px 8px;border-top:1px solid #244432">' +
+            Number(item.fees).toLocaleString() + " DUBZ" +
+          "</td>" +
+
+          '<td style="padding:10px 8px;border-top:1px solid #244432;font-weight:800">' +
+            Number(item.totalReward).toLocaleString() + " DUBZ" +
+          "</td>" +
+
+          '<td class="mono" style="padding:10px 8px;border-top:1px solid #244432">' +
+            hashShort +
+          "</td>" +
+        "</tr>"
+      );
+    }).join("");
   }
 
   async function controlMining(action) {
@@ -4706,6 +4805,7 @@ export function startRpcServer(deps: RpcServerDeps) {
       var mining = data.mining;
 
       updateControlButtons(mining);
+      renderMiningHistory(mining.history);
 
       setText(
         "status",

@@ -277,6 +277,17 @@ async function main() {
     blocksMined: 0,
     totalSubsidy: 0,
     totalFees: 0,
+    history: [] as Array<{
+      height: number;
+      hash: string;
+      nonce: number;
+      difficulty: number;
+      txCount: number;
+      subsidy: number;
+      fees: number;
+      totalReward: number;
+      minedAt: number;
+    }>,
     lastBlock: null as null | {
       height: number;
       hash: string;
@@ -721,7 +732,9 @@ async function main() {
       miningRuntime.blocksMined++;
       miningRuntime.totalSubsidy += subsidy;
       miningRuntime.totalFees += fees;
-      miningRuntime.lastBlock = {
+      const minedAt = Date.now();
+
+      const miningRecord = {
         height: chain.height(),
         hash: blk.hash,
         nonce: blk.nonce,
@@ -729,8 +742,26 @@ async function main() {
         txCount: blk.txs.length,
         subsidy,
         fees,
-        minedAt: Date.now(),
+        totalReward: subsidy + fees,
+        minedAt,
       };
+
+      miningRuntime.lastBlock = {
+        height: miningRecord.height,
+        hash: miningRecord.hash,
+        nonce: miningRecord.nonce,
+        difficulty: miningRecord.difficulty,
+        txCount: miningRecord.txCount,
+        subsidy: miningRecord.subsidy,
+        fees: miningRecord.fees,
+        minedAt: miningRecord.minedAt,
+      };
+
+      miningRuntime.history.unshift(miningRecord);
+
+      if (miningRuntime.history.length > 100) {
+        miningRuntime.history.length = 100;
+      }
 
       console.log(
         `⛏️ Mined block #${chain.height()} | diff=${blk.difficulty} | subsidy=${subsidy} | fees=${fees} | txs=${blk.txs.length} | stateRoot=${blk.stateRoot.slice(0, 16)}... | orphans=${chain.orphanCount()}`
