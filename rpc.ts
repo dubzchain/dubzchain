@@ -1883,6 +1883,632 @@ function renderPeerRows(peers: NetworkPeerStats[]) {
     .join("");
 }
 
+
+function renderAnalyticsHtml(
+  deps: RpcServerDeps,
+  rpcPort: number,
+  startedAtMs: number
+) {
+  const chain = deps.chain;
+  const state = chain.getState();
+  const tip = chain.blocks[chain.blocks.length - 1];
+
+  const sampleSize = Math.min(60, chain.blocks.length);
+  const startHeight = Math.max(0, chain.blocks.length - sampleSize);
+  const recent = chain.blocks.slice(startHeight);
+
+  const blockTimes: number[] = [];
+  for (let i = 1; i < recent.length; i++) {
+    blockTimes.push(Math.max(0, recent[i].ts - recent[i - 1].ts));
+  }
+
+  const avgBlockMs =
+    blockTimes.length > 0
+      ? blockTimes.reduce((sum, value) => sum + value, 0) / blockTimes.length
+      : 0;
+
+  const avgBlockSeconds = avgBlockMs / 1000;
+
+  const avgDifficulty =
+    recent.length > 0
+      ? recent.reduce((sum, block) => sum + block.difficulty, 0) / recent.length
+      : 0;
+
+  // DubzChain difficulty is expressed as required leading hexadecimal zeroes.
+  // Each extra hex zero increases expected PoW attempts by ~16x.
+  const estimatedHashesPerBlock =
+    avgDifficulty > 0 ? Math.pow(16, avgDifficulty) : 0;
+
+  const estimatedNetworkHashRate =
+    avgBlockSeconds > 0
+      ? estimatedHashesPerBlock / avgBlockSeconds
+      : 0;
+
+  const transferCount = recent.reduce(
+    (sum, block) =>
+      sum +
+      block.txs.filter((tx) => tx.type === "TRANSFER").length,
+    0
+  );
+
+  const totalTxCount = recent.reduce(
+    (sum, block) => sum + block.txs.length,
+    0
+  );
+
+  const totalFees = recent.reduce(
+    (sum, block) =>
+      sum +
+      block.txs
+        .filter((tx) => tx.type === "TRANSFER")
+        .reduce((feeSum, tx) => feeSum + tx.fee, 0),
+    0
+  );
+
+  const supplyPct =
+    deps.maxSupply > 0
+      ? (state.minted / deps.maxSupply) * 100
+      : 0;
+
+  const cumulativeWork = cumulativeWorkFromBlocks(chain.blocks).toString();
+
+  const heights = recent.map((_, index) => startHeight + index);
+  const difficulties = recent.map((block) => block.difficulty);
+
+  const blockSeconds = recent.map((block, index) => {
+    if (index === 0) return 0;
+    return Math.max(0, (block.ts - recent[index - 1].ts) / 1000);
+  });
+
+  const txSeries = recent.map(
+    (block) => block.txs.filter((tx) => tx.type === "TRANSFER").length
+  );
+
+  // Reconstruct recent supply history from the current minted value
+  // and known subsidy schedule.
+  let rollingMinted = state.minted;
+
+  const supplySeries = new Array(recent.length).fill(0);
+
+  for (let i = recent.length - 1; i >= 0; i--) {
+    supplySeries[i] = rollingMinted;
+
+    const height = startHeight + i;
+    if (height > 0) {
+      rollingMinted -= deps.blockRewardAtHeight(height);
+    }
+  }
+
+  function svgLine(
+    values: number[],
+    width = 720,
+    height = 180
+  ) {
+    if (!values.length) {
+      return `<svg viewBox="0 0 ${width} ${height}" class="chart-svg"></svg>`;
+    }
+
+    const max = Math.max(...values);
+    const min = Math.min(...values);
+    const span = Math.max(1, max - min);
+
+    const points = values
+      .map((value, index) => {
+        const x =
+          values.length <= 1
+            ? 0
+            : (index / (values.length - 1)) * width;
+
+        const y =
+          height - ((value - min) / span) * (height - 20) - 10;
+
+        return `${x.toFixed(2)},${y.toFixed(2)}`;
+      })
+      .join(" ");
+
+    return `
+      <svg viewBox="0 0 ${width} ${height}" class="chart-svg" role="img">
+        <polyline
+          fill="none"
+          stroke="currentColor"
+          stroke-width="3"
+          points="${points}"
+        />
+      </svg>
+    `;
+  }
+
+  function fmtRate(value: number) {
+    if (!Number.isFinite(value)) return "0 H/s";
+    if (value >= 1_000_000_000) return (value / 1_000_000_000).toFixed(2) + " GH/s";
+    if (value >= 1_000_000) return (value / 1_000_000).toFixed(2) + " MH/s";
+    if (value >= 1_000) return (value / 1_000).toFixed(2) + " KH/s";
+    return Math.round(value).toLocaleString() + " H/s";
+  }
+
+  const rows = recent
+    .slice()
+    .reverse()
+    .slice(0, 20)
+    .map((block) => {
+      const height = chain.blocks.indexOf(block);
+
+      const transferTxs = block.txs.filter(
+        (tx) => tx.type === "TRANSFER"
+      );
+
+      const fees = transferTxs.reduce(
+        (sum, tx) => sum + tx.fee,
+        0
+      );
+
+      const reward =
+        height > 0
+          ? deps.blockRewardAtHeight(height)
+          : 0;
+
+      const previous =
+        height > 0 ? chain.blocks[height - 1] : null;
+
+      const blockTimeSeconds =
+        previous
+          ? Math.max(0, (block.ts - previous.ts) / 1000)
+          : 0;
+
+      return `
+        <tr>
+          <td><a href="/index?height=${height}">#${height}</a></td>
+          <td>${block.difficulty}</td>
+          <td>${blockTimeSeconds.toFixed(2)}s</td>
+          <td>${block.txs.length}</td>
+          <td>${transferTxs.length}</td>
+          <td>${fees} DUBZ</td>
+          <td>${reward} DUBZ</td>
+          <td class="mono">${htmlEscape(shortHash(block.hash, 18))}</td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+
+<title>DubzChain Analytics</title>
+
+<style>
+  :root{
+    color-scheme:dark;
+    --bg:#06100b;
+    --panel:#0d1c14;
+    --panel2:#11281b;
+    --line:#244632;
+    --text:#effaf2;
+    --muted:#94aa9b;
+    --green:#6ee79a;
+    --blue:#79baff;
+  }
+
+  *{box-sizing:border-box}
+
+  body{
+    margin:0;
+    background:
+      radial-gradient(circle at top left,#173d24 0%,transparent 30%),
+      var(--bg);
+    color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+  }
+
+  a{
+    color:var(--green);
+    text-decoration:none;
+  }
+
+  a:hover{text-decoration:underline}
+
+  header{
+    border-bottom:1px solid var(--line);
+    background:rgba(6,16,11,.94);
+    position:sticky;
+    top:0;
+    z-index:10;
+    backdrop-filter:blur(12px);
+  }
+
+  .nav{
+    max-width:1320px;
+    margin:auto;
+    padding:17px 24px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:20px;
+  }
+
+  .brand{
+    color:white;
+    font-weight:900;
+    font-size:20px;
+  }
+
+  .network{
+    color:var(--muted);
+    font-size:13px;
+  }
+
+  main{
+    max-width:1320px;
+    margin:auto;
+    padding:30px 24px 70px;
+  }
+
+  .hero{
+    border:1px solid var(--line);
+    border-radius:22px;
+    padding:27px;
+    margin-bottom:18px;
+    background:
+      linear-gradient(135deg,rgba(110,231,154,.12),rgba(13,28,20,.97));
+  }
+
+  h1{
+    margin:0 0 7px;
+    font-size:31px;
+  }
+
+  h2{
+    margin:0 0 15px;
+    font-size:18px;
+  }
+
+  .muted{color:var(--muted)}
+
+  .grid{
+    display:grid;
+    grid-template-columns:repeat(12,1fr);
+    gap:15px;
+    margin-bottom:18px;
+  }
+
+  .stat{
+    grid-column:span 3;
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:16px;
+    padding:19px;
+  }
+
+  .label{
+    color:var(--muted);
+    font-size:12px;
+    margin-bottom:7px;
+  }
+
+  .value{
+    font-size:22px;
+    font-weight:850;
+    overflow-wrap:anywhere;
+  }
+
+  .note{
+    color:var(--muted);
+    font-size:12px;
+    margin-top:7px;
+  }
+
+  .charts{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:18px;
+  }
+
+  .card{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:18px;
+    padding:21px;
+    margin-bottom:18px;
+  }
+
+  .chart{
+    color:var(--green);
+    background:#07110b;
+    border:1px solid var(--line);
+    border-radius:13px;
+    padding:13px;
+    overflow:hidden;
+  }
+
+  .chart-svg{
+    display:block;
+    width:100%;
+    height:180px;
+  }
+
+  .chart-meta{
+    display:flex;
+    justify-content:space-between;
+    color:var(--muted);
+    font-size:12px;
+    gap:10px;
+    margin-top:8px;
+  }
+
+  .supply-track{
+    width:100%;
+    height:14px;
+    border-radius:999px;
+    border:1px solid var(--line);
+    background:#07110b;
+    overflow:hidden;
+    margin-top:13px;
+  }
+
+  .supply-fill{
+    height:100%;
+    background:linear-gradient(90deg,#3fc474,#83efa8);
+    width:${Math.max(0, Math.min(100, supplyPct))}%;
+  }
+
+  .actions{
+    display:flex;
+    flex-wrap:wrap;
+    gap:10px;
+    margin-top:18px;
+  }
+
+  .button{
+    display:inline-block;
+    padding:10px 14px;
+    border-radius:10px;
+    border:1px solid #35634a;
+    background:#173824;
+    color:white;
+    font-weight:800;
+  }
+
+  .button:hover{
+    text-decoration:none;
+    background:#205030;
+  }
+
+  .table-wrap{overflow:auto}
+
+  table{
+    width:100%;
+    border-collapse:collapse;
+    min-width:850px;
+  }
+
+  th,td{
+    text-align:left;
+    padding:12px 9px;
+    border-bottom:1px solid var(--line);
+    white-space:nowrap;
+  }
+
+  th{
+    color:var(--muted);
+    font-size:12px;
+  }
+
+  .mono{
+    font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+  }
+
+  @media(max-width:950px){
+    .stat{grid-column:span 6}
+    .charts{grid-template-columns:1fr}
+  }
+
+  @media(max-width:600px){
+    main{padding:18px 14px 50px}
+    .nav{padding:15px}
+    .stat{grid-column:span 12}
+    h1{font-size:25px}
+  }
+</style>
+</head>
+
+<body>
+
+<header>
+  <div class="nav">
+    <a class="brand" href="/analytics">DUBZ ANALYTICS</a>
+
+    <div class="network">
+      ${htmlEscape(deps.chainId)} · Height ${chain.height()} · RPC ${rpcPort}
+    </div>
+  </div>
+</header>
+
+<main>
+
+  <section class="hero">
+    <div class="muted">Layer 1 Network Observability</div>
+    <h1>Chain Analytics</h1>
+
+    <div class="muted">
+      Recent proof-of-work, block production, supply and transaction activity.
+    </div>
+
+    <div class="actions">
+      <a class="button" href="/index">Explorer</a>
+      <a class="button" href="/node">Node Center</a>
+      <a class="button" href="/mining">Mining Center</a>
+    </div>
+  </section>
+
+  <section class="grid">
+
+    <div class="stat">
+      <div class="label">Chain Height</div>
+      <div class="value">${fmtNumber(chain.height())}</div>
+      <div class="note">Current local tip</div>
+    </div>
+
+    <div class="stat">
+      <div class="label">Current Difficulty</div>
+      <div class="value">${fmtNumber(tip.difficulty)}</div>
+      <div class="note">Leading hexadecimal zeroes</div>
+    </div>
+
+    <div class="stat">
+      <div class="label">Avg Block Time</div>
+      <div class="value">${avgBlockSeconds.toFixed(2)}s</div>
+      <div class="note">Last ${sampleSize} blocks</div>
+    </div>
+
+    <div class="stat">
+      <div class="label">Estimated Network Hash Rate</div>
+      <div class="value">${fmtRate(estimatedNetworkHashRate)}</div>
+      <div class="note">PoW estimate from difficulty and block time</div>
+    </div>
+
+    <div class="stat">
+      <div class="label">Minted Supply</div>
+      <div class="value">${fmtNumber(state.minted)} DUBZ</div>
+      <div class="note">${supplyPct.toFixed(4)}% of max supply</div>
+    </div>
+
+    <div class="stat">
+      <div class="label">Remaining Supply</div>
+      <div class="value">${fmtNumber(Math.max(0, deps.maxSupply - state.minted))}</div>
+      <div class="note">Max ${fmtNumber(deps.maxSupply)} DUBZ</div>
+    </div>
+
+    <div class="stat">
+      <div class="label">Recent Transfers</div>
+      <div class="value">${fmtNumber(transferCount)}</div>
+      <div class="note">${fmtNumber(totalTxCount)} total block transactions</div>
+    </div>
+
+    <div class="stat">
+      <div class="label">Recent Fees</div>
+      <div class="value">${fmtNumber(totalFees)} DUBZ</div>
+      <div class="note">Last ${sampleSize} blocks</div>
+    </div>
+
+  </section>
+
+  <section class="card">
+    <h2>Supply Progress</h2>
+
+    <div>
+      ${fmtNumber(state.minted)} / ${fmtNumber(deps.maxSupply)} DUBZ
+    </div>
+
+    <div class="supply-track">
+      <div class="supply-fill"></div>
+    </div>
+  </section>
+
+  <section class="charts">
+
+    <section class="card">
+      <h2>Difficulty History</h2>
+
+      <div class="chart">
+        ${svgLine(difficulties)}
+      </div>
+
+      <div class="chart-meta">
+        <span>Block #${heights[0] ?? 0}</span>
+        <span>Current ${tip.difficulty}</span>
+        <span>Block #${heights[heights.length - 1] ?? 0}</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Block Time History</h2>
+
+      <div class="chart">
+        ${svgLine(blockSeconds)}
+      </div>
+
+      <div class="chart-meta">
+        <span>Recent blocks</span>
+        <span>Avg ${avgBlockSeconds.toFixed(2)} sec</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Transfer Activity</h2>
+
+      <div class="chart">
+        ${svgLine(txSeries)}
+      </div>
+
+      <div class="chart-meta">
+        <span>Transfers per block</span>
+        <span>${transferCount} recent transfers</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Recent Supply Growth</h2>
+
+      <div class="chart">
+        ${svgLine(supplySeries)}
+      </div>
+
+      <div class="chart-meta">
+        <span>${fmtNumber(supplySeries[0] ?? state.minted)} DUBZ</span>
+        <span>${fmtNumber(state.minted)} DUBZ</span>
+      </div>
+    </section>
+
+  </section>
+
+  <section class="card">
+    <h2>Chain Work</h2>
+
+    <div class="mono">${htmlEscape(cumulativeWork)}</div>
+
+    <div class="note">
+      Cumulative proof-of-work represented by DubzChain difficulty rules.
+    </div>
+  </section>
+
+  <section class="card">
+
+    <h2>Recent Block Performance</h2>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Height</th>
+            <th>Difficulty</th>
+            <th>Block Time</th>
+            <th>TXs</th>
+            <th>Transfers</th>
+            <th>Fees</th>
+            <th>Subsidy</th>
+            <th>Hash</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${rows}
+        </tbody>
+      </table>
+    </div>
+
+  </section>
+
+  <div class="muted">
+    Node uptime: ${htmlEscape(fmtDuration(Date.now() - startedAtMs))}
+  </div>
+
+</main>
+</body>
+</html>`;
+}
+
 function renderExplorerHtml(deps: RpcServerDeps, rpcPort: number, startedAtMs: number) {
   const chain = deps.chain;
   const state = chain.getState();
@@ -5489,6 +6115,14 @@ export function startRpcServer(deps: RpcServerDeps) {
         );
       }
 
+      if (method === "GET" && path === "/analytics") {
+        return htmlSend(
+          res,
+          200,
+          renderAnalyticsHtml(deps, rpcPort, startedAtMs)
+        );
+      }
+
       if (method === "GET" && path === "/node") {
         return htmlSend(
           res,
@@ -6201,6 +6835,7 @@ export function startRpcServer(deps: RpcServerDeps) {
             "DubzChain RPC",
             "",
             "Node RPC",
+            "GET  /analytics",
             "GET  /node",
             "GET  /health",
             "GET  /status",
