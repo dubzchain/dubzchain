@@ -3,10 +3,11 @@
   "version": "0.1.0-testnet",
   "description": "---",
   "main": "index.js",
- "scripts": {
-  "dev": "tsc -w",
-  "start": "tsc && node dist/index.js"
-},
+  "scripts": {
+    "dev": "tsc -w",
+    "start": "tsc && node dist/index.js",
+    "test:security": "tsc && node dist/security-test.js"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/code-creations-io/create-your-own-blockchain.git"
