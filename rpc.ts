@@ -5489,6 +5489,685 @@ export function startRpcServer(deps: RpcServerDeps) {
         );
       }
 
+      if (method === "GET" && path === "/node") {
+        return htmlSend(
+          res,
+          200,
+          `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>DubzChain Node Control Center</title>
+
+<style>
+  :root{
+    color-scheme:dark;
+    --bg:#06100b;
+    --panel:#0d1c14;
+    --panel2:#11281b;
+    --line:#244632;
+    --text:#effaf2;
+    --muted:#94aa9b;
+    --green:#6ee79a;
+    --yellow:#f0ca65;
+    --blue:#78baff;
+    --red:#ff8585;
+  }
+
+  *{box-sizing:border-box}
+
+  body{
+    margin:0;
+    background:
+      radial-gradient(circle at top left,#163d24 0%,transparent 30%),
+      var(--bg);
+    color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+  }
+
+  a{
+    color:var(--green);
+    text-decoration:none;
+  }
+
+  a:hover{text-decoration:underline}
+
+  header{
+    position:sticky;
+    top:0;
+    z-index:10;
+    border-bottom:1px solid var(--line);
+    background:rgba(6,16,11,.93);
+    backdrop-filter:blur(12px);
+  }
+
+  .nav{
+    max-width:1300px;
+    margin:auto;
+    padding:17px 24px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:20px;
+  }
+
+  .brand{
+    font-size:20px;
+    font-weight:900;
+    color:white;
+  }
+
+  .network{
+    color:var(--muted);
+    font-size:13px;
+  }
+
+  main{
+    max-width:1300px;
+    margin:auto;
+    padding:30px 24px 70px;
+  }
+
+  .hero{
+    border:1px solid var(--line);
+    border-radius:22px;
+    padding:27px;
+    margin-bottom:18px;
+    background:
+      linear-gradient(135deg,rgba(110,231,154,.12),rgba(13,28,20,.97));
+    box-shadow:0 24px 70px rgba(0,0,0,.27);
+  }
+
+  .hero-top{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    gap:20px;
+    flex-wrap:wrap;
+  }
+
+  h1{
+    margin:0 0 7px;
+    font-size:31px;
+  }
+
+  h2{
+    margin:0 0 16px;
+    font-size:18px;
+  }
+
+  .muted{color:var(--muted)}
+
+  .status{
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    padding:8px 13px;
+    border-radius:999px;
+    border:1px solid currentColor;
+    font-weight:800;
+  }
+
+  .status::before{
+    content:"";
+    width:9px;
+    height:9px;
+    border-radius:50%;
+    background:currentColor;
+  }
+
+  .online{
+    color:var(--green);
+    background:rgba(110,231,154,.08);
+  }
+
+  .warning{
+    color:var(--yellow);
+    background:rgba(240,202,101,.08);
+  }
+
+  .offline{
+    color:var(--red);
+    background:rgba(255,133,133,.08);
+  }
+
+  .grid{
+    display:grid;
+    grid-template-columns:repeat(12,1fr);
+    gap:15px;
+    margin-bottom:18px;
+  }
+
+  .stat{
+    grid-column:span 3;
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:16px;
+    padding:19px;
+  }
+
+  .stat-label{
+    color:var(--muted);
+    font-size:12px;
+    margin-bottom:7px;
+  }
+
+  .stat-value{
+    font-size:22px;
+    font-weight:850;
+    overflow-wrap:anywhere;
+  }
+
+  .stat-note{
+    margin-top:7px;
+    color:var(--muted);
+    font-size:12px;
+  }
+
+  .card{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:18px;
+    padding:21px;
+    margin-bottom:18px;
+  }
+
+  .two-column{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:18px;
+  }
+
+  table{
+    width:100%;
+    border-collapse:collapse;
+  }
+
+  th,td{
+    text-align:left;
+    padding:12px 9px;
+    border-bottom:1px solid var(--line);
+    vertical-align:top;
+    overflow-wrap:anywhere;
+  }
+
+  th{
+    width:175px;
+    color:var(--muted);
+    font-size:12px;
+  }
+
+  .mono{
+    font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+  }
+
+  .actions{
+    display:flex;
+    flex-wrap:wrap;
+    gap:10px;
+  }
+
+  .button{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    padding:11px 15px;
+    border:1px solid #35634a;
+    border-radius:11px;
+    background:#173824;
+    color:white;
+    font-weight:800;
+  }
+
+  .button:hover{
+    background:#205030;
+    text-decoration:none;
+  }
+
+  .peer-empty{
+    color:var(--muted);
+    padding:16px 0;
+  }
+
+  @media(max-width:950px){
+    .stat{grid-column:span 6}
+    .two-column{grid-template-columns:1fr}
+  }
+
+  @media(max-width:600px){
+    main{padding:18px 14px 50px}
+    .nav{padding:15px}
+    .stat{grid-column:span 12}
+    h1{font-size:25px}
+  }
+</style>
+</head>
+
+<body>
+
+<header>
+  <div class="nav">
+    <a class="brand" href="/node">DUBZ NODE</a>
+
+    <div class="network">
+      ${htmlEscape(deps.chainId)} · RPC ${rpcPort} · P2P ${deps.port}
+    </div>
+  </div>
+</header>
+
+<main>
+
+  <section class="hero">
+    <div class="hero-top">
+      <div>
+        <div class="muted">DubzChain Node Operator Interface</div>
+        <h1>Node Control Center</h1>
+        <div class="muted">
+          Live blockchain, network, storage and mining status.
+        </div>
+      </div>
+
+      <div id="nodeStatus" class="status warning">
+        Connecting...
+      </div>
+    </div>
+  </section>
+
+  <section class="grid">
+
+    <div class="stat">
+      <div class="stat-label">Chain Height</div>
+      <div id="height" class="stat-value">-</div>
+      <div class="stat-note">Current local tip</div>
+    </div>
+
+    <div class="stat">
+      <div class="stat-label">Difficulty</div>
+      <div id="difficulty" class="stat-value">-</div>
+      <div class="stat-note">Current proof-of-work difficulty</div>
+    </div>
+
+    <div class="stat">
+      <div class="stat-label">Connected Peers</div>
+      <div id="peers" class="stat-value">-</div>
+      <div class="stat-note">Open P2P connections</div>
+    </div>
+
+    <div class="stat">
+      <div class="stat-label">Mempool</div>
+      <div id="mempool" class="stat-value">-</div>
+      <div class="stat-note">Pending transactions</div>
+    </div>
+
+    <div class="stat">
+      <div class="stat-label">Sync</div>
+      <div id="sync" class="stat-value">-</div>
+      <div class="stat-note">Blockchain synchronization</div>
+    </div>
+
+    <div class="stat">
+      <div class="stat-label">Minted Supply</div>
+      <div id="minted" class="stat-value">-</div>
+      <div class="stat-note">Native DUBZ created</div>
+    </div>
+
+    <div class="stat">
+      <div class="stat-label">Block Reward</div>
+      <div id="reward" class="stat-value">-</div>
+      <div class="stat-note">Current subsidy</div>
+    </div>
+
+    <div class="stat">
+      <div class="stat-label">Mining</div>
+      <div id="mining" class="stat-value">-</div>
+      <div class="stat-note">Local miner state</div>
+    </div>
+
+  </section>
+
+  <section class="card">
+    <h2>Quick Actions</h2>
+
+    <div class="actions">
+      <a class="button" href="/index">Explorer</a>
+      <a class="button" href="/mining">Mining Center</a>
+      <a class="button" href="/address/${encodeURIComponent(deps.minerWalletFile)}">Miner Wallet</a>
+      <a class="button" href="/peers">Peers</a>
+      <a class="button" href="/storage">Storage</a>
+      <a class="button" href="/diagnostics">Diagnostics</a>
+      <a class="button" href="/metrics">Metrics</a>
+    </div>
+  </section>
+
+  <section class="two-column">
+
+    <div class="card">
+      <h2>Node</h2>
+
+      <table>
+        <tbody>
+          <tr>
+            <th>Chain</th>
+            <td id="chainId" class="mono">-</td>
+          </tr>
+
+          <tr>
+            <th>Protocol</th>
+            <td id="protocol">-</td>
+          </tr>
+
+          <tr>
+            <th>P2P Port</th>
+            <td id="p2pPort">-</td>
+          </tr>
+
+          <tr>
+            <th>RPC Port</th>
+            <td id="rpcPort">-</td>
+          </tr>
+
+          <tr>
+            <th>Uptime</th>
+            <td id="uptime">-</td>
+          </tr>
+
+          <tr>
+            <th>Memory RSS</th>
+            <td id="memory">-</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>Synchronization</h2>
+
+      <table>
+        <tbody>
+          <tr>
+            <th>Best Remote Height</th>
+            <td id="bestRemote">-</td>
+          </tr>
+
+          <tr>
+            <th>Sync Target</th>
+            <td id="syncTarget">-</td>
+          </tr>
+
+          <tr>
+            <th>Lag</th>
+            <td id="syncLag">-</td>
+          </tr>
+
+          <tr>
+            <th>Orphans</th>
+            <td id="orphans">-</td>
+          </tr>
+
+          <tr>
+            <th>Chain Work</th>
+            <td id="chainWork" class="mono">-</td>
+          </tr>
+
+          <tr>
+            <th>Tip Hash</th>
+            <td id="tipHash" class="mono">-</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+  </section>
+
+  <section class="two-column">
+
+    <div class="card">
+      <h2>Storage</h2>
+
+      <table>
+        <tbody>
+          <tr>
+            <th>Mode</th>
+            <td id="storageMode">-</td>
+          </tr>
+
+          <tr>
+            <th>Pruning</th>
+            <td id="pruning">-</td>
+          </tr>
+
+          <tr>
+            <th>Local Blocks</th>
+            <td id="localBlocks">-</td>
+          </tr>
+
+          <tr>
+            <th>Full Height</th>
+            <td id="fullHeight">-</td>
+          </tr>
+
+          <tr>
+            <th>Checkpoint</th>
+            <td id="checkpoint">-</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>Mining Session</h2>
+
+      <table>
+        <tbody>
+          <tr>
+            <th>Miner</th>
+            <td id="minerAddress" class="mono">-</td>
+          </tr>
+
+          <tr>
+            <th>Hash Rate</th>
+            <td id="hashRate">-</td>
+          </tr>
+
+          <tr>
+            <th>Blocks Mined</th>
+            <td id="blocksMined">-</td>
+          </tr>
+
+          <tr>
+            <th>Rewards</th>
+            <td id="miningRewards">-</td>
+          </tr>
+
+          <tr>
+            <th>Last Block</th>
+            <td id="lastBlock">-</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+  </section>
+
+  <section class="card">
+    <h2>Connected Peers</h2>
+    <div id="peerList" class="peer-empty">Loading peers...</div>
+  </section>
+
+</main>
+
+<script>
+  function setText(id, value) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = String(value);
+  }
+
+  function number(value) {
+    if (value === null || value === undefined) return "-";
+    return Number(value).toLocaleString();
+  }
+
+  function duration(ms) {
+    var total = Math.max(0, Math.floor(Number(ms || 0) / 1000));
+
+    var days = Math.floor(total / 86400);
+    var hours = Math.floor((total % 86400) / 3600);
+    var minutes = Math.floor((total % 3600) / 60);
+    var seconds = total % 60;
+
+    if (days > 0) return days + "d " + hours + "h";
+    if (hours > 0) return hours + "h " + minutes + "m";
+    if (minutes > 0) return minutes + "m " + seconds + "s";
+
+    return seconds + "s";
+  }
+
+  async function getJson(url) {
+    var response = await fetch(url, { cache: "no-store" });
+
+    if (!response.ok) {
+      throw new Error(url + " returned " + response.status);
+    }
+
+    return response.json();
+  }
+
+  async function refreshNode() {
+    try {
+      var results = await Promise.all([
+        getJson("/health"),
+        getJson("/status"),
+        getJson("/storage"),
+        getJson("/peers"),
+        getJson("/mining/status")
+      ]);
+
+      var health = results[0];
+      var statusData = results[1].summary;
+      var storage = results[2].storage;
+      var peersData = results[3];
+      var mining = results[4].mining;
+
+      var statusEl = document.getElementById("nodeStatus");
+      statusEl.className = "status online";
+      statusEl.textContent = "Node Online";
+
+      setText("height", number(statusData.height));
+      setText("difficulty", number(statusData.tipDifficulty));
+      setText("peers", number(statusData.peersOpen));
+      setText("mempool", number(statusData.mempool));
+      setText("sync", number(statusData.syncProgressPct) + "%");
+      setText("minted", number(statusData.minted) + " DUBZ");
+      setText("reward", number(statusData.rewardNow) + " DUBZ");
+
+      var miningState =
+        mining.controlState === "paused"
+          ? "Paused"
+          : mining.enabled
+          ? mining.active
+            ? "Mining"
+            : "Running"
+          : "Stopped";
+
+      setText("mining", miningState);
+
+      setText("chainId", statusData.chainId);
+      setText("protocol", statusData.protocolVersion);
+      setText("p2pPort", statusData.p2pPort);
+      setText("rpcPort", statusData.rpcPort);
+      setText("uptime", statusData.uptimeHuman || duration(statusData.uptimeMs));
+      setText("memory", statusData.rssHuman || number(statusData.rssBytes) + " bytes");
+
+      setText("bestRemote", number(statusData.bestRemoteHeight));
+      setText("syncTarget", number(statusData.syncTargetHeight));
+      setText("syncLag", number(statusData.syncLagBlocks) + " blocks");
+      setText("orphans", number(statusData.orphans));
+      setText("chainWork", statusData.chainWork);
+      setText("tipHash", statusData.tipHash);
+
+      setText("storageMode", storage.mode);
+      setText("pruning", storage.pruningEnabled ? "Enabled" : "Disabled");
+      setText("localBlocks", number(storage.localBlocks));
+      setText("fullHeight", number(storage.fullHeight));
+      setText(
+        "checkpoint",
+        storage.hasCheckpoint
+          ? "#" + storage.checkpointHeight
+          : "None"
+      );
+
+      setText("minerAddress", mining.minerAddress || "-");
+      setText("hashRate", number(mining.hashRate) + " H/s");
+      setText("blocksMined", number(mining.blocksMined));
+
+      setText(
+        "miningRewards",
+        number(
+          Number(mining.totalSubsidy || 0) +
+          Number(mining.totalFees || 0)
+        ) + " DUBZ"
+      );
+
+      if (mining.lastBlock) {
+        setText("lastBlock", "#" + mining.lastBlock.height);
+      } else {
+        setText("lastBlock", "None this session");
+      }
+
+      var peerList = document.getElementById("peerList");
+
+      if (!peersData.peers || peersData.peers.length === 0) {
+        peerList.className = "peer-empty";
+        peerList.textContent = "No connected peers.";
+      } else {
+        peerList.className = "";
+
+        var html = "<table><thead><tr>";
+        html += "<th>Peer</th>";
+        html += "<th>Direction</th>";
+        html += "<th>Remote Height</th>";
+        html += "<th>Status</th>";
+        html += "</tr></thead><tbody>";
+
+        peersData.peers.forEach(function(peer) {
+          html += "<tr>";
+          html += "<td class='mono'>" + escapeHtml(peer.peer || "-") + "</td>";
+          html += "<td>" + escapeHtml(peer.direction || "-") + "</td>";
+          html += "<td>" + escapeHtml(String(peer.remoteHeight ?? "-")) + "</td>";
+          html += "<td>" + escapeHtml(peer.readyStateLabel || "Connected") + "</td>";
+          html += "</tr>";
+        });
+
+        html += "</tbody></table>";
+        peerList.innerHTML = html;
+      }
+
+    } catch (error) {
+      var statusEl = document.getElementById("nodeStatus");
+      statusEl.className = "status offline";
+      statusEl.textContent = "Node Data Unavailable";
+    }
+  }
+
+  function escapeHtml(value) {
+    return String(value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+  refreshNode();
+  setInterval(refreshNode, 2000);
+</script>
+
+</body>
+</html>`
+        );
+      }
+
       if (method === "GET" && path === "/index") {
         const heightStr = url.searchParams.get("height");
 
@@ -5522,6 +6201,7 @@ export function startRpcServer(deps: RpcServerDeps) {
             "DubzChain RPC",
             "",
             "Node RPC",
+            "GET  /node",
             "GET  /health",
             "GET  /status",
             "GET  /diagnostics",
