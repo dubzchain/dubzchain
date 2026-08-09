@@ -32,6 +32,12 @@ import {
   verifyStateProof,
 } from "./chain";
 
+import {
+  getActiveNetworkProfile,
+  profileWarnings,
+  printNetworkProfile,
+} from "./mainnet-profile";
+
 export {
   Chain,
   Tx,
@@ -236,6 +242,57 @@ async function main() {
     argv: process.argv,
     positionalPeerUrl,
   });
+
+  const activeProfile = getActiveNetworkProfile(process.argv);
+
+  printNetworkProfile(activeProfile);
+
+  if (activeProfile.name === "mainnet") {
+    const blockers: string[] = [];
+
+    if (!activeProfile.frozen) {
+      blockers.push("mainnet network profile is not frozen");
+    }
+
+    if (!activeProfile.genesis.frozen) {
+      blockers.push("mainnet genesis is not frozen");
+    }
+
+    if (!activeProfile.genesis.genesisHash) {
+      blockers.push("mainnet genesis hash is not finalized");
+    }
+
+    if (!activeProfile.genesis.genesisStateRoot) {
+      blockers.push("mainnet genesis state root is not finalized");
+    }
+
+    blockers.push(...profileWarnings(activeProfile));
+
+    if (blockers.length > 0) {
+      console.error("");
+      console.error("🛑 DUBZCHAIN MAINNET STARTUP BLOCKED");
+      console.error("-----------------------------------");
+
+      for (const blocker of blockers) {
+        console.error(`   ❌ ${blocker}`);
+      }
+
+      console.error("");
+      console.error(
+        "Mainnet cannot start until all production readiness requirements are satisfied."
+      );
+      console.error(
+        "Use --profile devnet or --profile testnet while Layer 1 validation continues."
+      );
+      console.error("");
+
+      process.exit(1);
+    }
+
+    console.log("");
+    console.log("✅ Mainnet production safety checks passed");
+    console.log("");
+  }
 
   const chainFile = `dubzchain.${port}.json`;
   const walletFile = `wallet.miner.${port}.json`;

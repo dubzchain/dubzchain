@@ -40,6 +40,48 @@ import {
 ========================= */
 const ACTIVE_PROFILE = getActiveNetworkProfile(process.argv);
 
+/*
+ * Mainnet consensus preflight.
+ *
+ * This must run during chain module initialization, before Chain.instance
+ * constructs or validates genesis. Operational production checks such as
+ * TLS, RPC authentication, seeds and checkpoint keys are enforced later
+ * by index.ts.
+ */
+if (ACTIVE_PROFILE.name === "mainnet") {
+  const blockers: string[] = [];
+
+  if (!ACTIVE_PROFILE.frozen) {
+    blockers.push("mainnet network profile is not frozen");
+  }
+
+  if (!ACTIVE_PROFILE.genesis.frozen) {
+    blockers.push("mainnet genesis is not frozen");
+  }
+
+  if (!ACTIVE_PROFILE.genesis.genesisHash) {
+    blockers.push("mainnet genesis hash is not finalized");
+  }
+
+  if (!ACTIVE_PROFILE.genesis.genesisStateRoot) {
+    blockers.push("mainnet genesis state root is not finalized");
+  }
+
+  if (ACTIVE_PROFILE.genesis.genesisTs <= 0) {
+    blockers.push("mainnet genesis timestamp is not finalized");
+  }
+
+  if (blockers.length > 0) {
+    throw new Error(
+      [
+        "DUBZCHAIN MAINNET STARTUP BLOCKED",
+        ...blockers.map((x) => `- ${x}`),
+        "Use --profile devnet or --profile testnet while mainnet remains unfinished.",
+      ].join("\n")
+    );
+  }
+}
+
 export const CHAIN_ID = ACTIVE_PROFILE.network.chainId;
 export const PROTOCOL_VERSION = ACTIVE_PROFILE.network.protocolVersion;
 export const NETWORK_MAGIC = ACTIVE_PROFILE.network.networkMagic;
