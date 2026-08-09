@@ -332,7 +332,7 @@ export function blockRewardAtHeight(height: number): number {
    Coinbase Maturity
 ========================= */
 export type PendingReward = { amount: number; unlockHeight: number };
-const COINBASE_MATURITY = 33;
+const COINBASE_MATURITY = ACTIVE_PROFILE.monetary.coinbaseMaturity;
 
 /* =========================
    Replay State + State Commitments + State Proofs
@@ -534,9 +534,9 @@ const GENESIS_STATE_ROOT = computeStateRoot(GENESIS_EMPTY_STATE);
 /* =========================
    Limits + Fees
 ========================= */
-export const MIN_FEE = 1;
-export const MAX_BLOCK_BYTES = 250_000;
-const MAX_TX_PER_BLOCK = 5000;
+export const MIN_FEE = ACTIVE_PROFILE.monetary.minFee;
+export const MAX_BLOCK_BYTES = ACTIVE_PROFILE.blocks.maxBlockBytes;
+const MAX_TX_PER_BLOCK = ACTIVE_PROFILE.blocks.maxTxPerBlock;
 
 /* =========================
    Difficulty Adjustment (Windowed)
@@ -748,11 +748,11 @@ export class Tx {
 /* =========================
    Mempool Relay Policy Hardening + Eviction Policy
 ========================= */
-export const DEFAULT_MIN_RELAY_FEE = 2;
+export const DEFAULT_MIN_RELAY_FEE = ACTIVE_PROFILE.blocks.defaultMinRelayFee;
 export const MEMPOOL_MIN_BYTES = 100;
 export const MEMPOOL_MAX_BYTES = 50_000;
-export const MAX_MEMPOOL_TXS = 10_000;
-export const MAX_MEMPOOL_TXS_PER_SENDER = 128;
+export const MAX_MEMPOOL_TXS = ACTIVE_PROFILE.blocks.maxMempoolTxs;
+export const MAX_MEMPOOL_TXS_PER_SENDER = ACTIVE_PROFILE.blocks.maxMempoolTxsPerSender;
 
 export type MempoolPolicyDecision = {
   ok: boolean;
